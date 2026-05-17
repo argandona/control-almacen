@@ -158,6 +158,54 @@ class StockCamionViewSet(viewsets.ModelViewSet):
             qs = qs.filter(camion_id=camion_id)
         return qs
 
+    @action(detail=False, methods=['get'])
+    def por_camion(self, request):
+        """
+        GET /api/stock-camion/por_camion/
+        Devuelve camiones agrupados con sus materiales en stock (cantidad > 0).
+        ?usuario=<id>  → solo camiones asignados a ese usuario
+        """
+        from datetime import date
+        from django.db.models import Q
+
+        usuario_id = request.query_params.get('usuario')
+        qs = StockCamion.objects.filter(cantidad__gt=0).select_related('camion', 'material')
+
+        if usuario_id:
+            ids = UsuarioCamion.objects.filter(
+                usuario_id=usuario_id
+            ).values_list('camion_id', flat=True).distinct()
+            qs = qs.filter(camion_id__in=ids)
+
+        hoy = date.today()
+        asignaciones = {
+            a.camion_id: a.usuario.nombre
+            for a in UsuarioCamion.objects.filter(
+                activo=True, fecha_inicio__lte=hoy
+            ).filter(
+                Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=hoy)
+            ).select_related('usuario')
+        }
+
+        camiones = {}
+        for stock in qs:
+            cid = stock.camion_id
+            if cid not in camiones:
+                camiones[cid] = {
+                    'camion_id':      cid,
+                    'placa':          stock.camion.placa,
+                    'usuario_nombre': asignaciones.get(cid, 'Sin asignar'),
+                    'items':          [],
+                }
+            camiones[cid]['items'].append({
+                'material_id': stock.material_id,
+                'matricula':   stock.material.matricula,
+                'descripcion': stock.material.descripcion,
+                'cantidad':    stock.cantidad,
+            })
+
+        return Response(list(camiones.values()))
+
 
 # ── Almacen ──────────────────────────────────────────────────────────────────
 class AlmacenViewSet(viewsets.ModelViewSet):
