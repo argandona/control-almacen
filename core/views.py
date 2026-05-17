@@ -745,6 +745,75 @@ class InventarioViewSet(viewsets.ModelViewSet):
         if anio:    qs = qs.filter(anio=anio)
         return qs
 
+    @action(detail=False, methods=['post'])
+    def iniciar_o_continuar(self, request):
+        """
+        POST /api/inventarios/iniciar_o_continuar/
+        Body: {camion: id, usuario: id}
+        Devuelve borrador del mes actual si existe, o crea uno nuevo
+        con el stock teórico pre-cargado desde StockCamion.
+        """
+        from datetime import date as _date
+        camion_id  = request.data.get('camion')
+        usuario_id = request.data.get('usuario')
+        if not camion_id or not usuario_id:
+            return Response({'detail': 'Se requiere camion y usuario.'}, status=400)
+        try:
+            camion  = Camion.objects.get(pk=camion_id)
+            usuario = Usuario.objects.get(pk=usuario_id)
+        except (Camion.DoesNotExist, Usuario.DoesNotExist):
+            return Response({'detail': 'Camión o usuario no encontrado.'}, status=404)
+
+        hoy  = _date.today()
+        mes  = hoy.month
+        anio = hoy.year
+
+        existente = (Inventario.objects
+                     .prefetch_related('detalles__material')
+                     .filter(camion=camion, mes=mes, anio=anio)
+                     .first())
+        if existente:
+            return Response(InventarioSerializer(existente).data)
+
+        with transaction.atomic():
+            inventario = Inventario.objects.create(
+                camion=camion, usuario=usuario, mes=mes, anio=anio, estado='borrador')
+            for sc in StockCamion.objects.filter(camion=camion).select_related('material'):
+                DetalleInventario.objects.create(
+                    inventario=inventario,
+                    material=sc.material,
+                    cantidad_teorica=sc.cantidad,
+                    cantidad_fisica=sc.cantidad,
+                    diferencia=0,
+                )
+        inventario = (Inventario.objects
+                      .prefetch_related('detalles__material')
+                      .get(pk=inventario.pk))
+        return Response(InventarioSerializer(inventario).data, status=201)
+
+    @action(detail=True, methods=['patch'])
+    def guardar_conteo(self, request, pk=None):
+        """
+        PATCH /api/inventarios/{id}/guardar_conteo/
+        Body: {detalles: [{id_detalle_inventario: x, cantidad_fisica: y}, ...]}
+        """
+        inventario = self.get_object()
+        if inventario.estado == 'cerrado':
+            return Response({'detail': 'No se puede editar un inventario cerrado.'}, status=400)
+        with transaction.atomic():
+            for d in request.data.get('detalles', []):
+                try:
+                    det = DetalleInventario.objects.get(
+                        pk=d['id_detalle_inventario'], inventario=inventario)
+                    det.cantidad_fisica = d.get('cantidad_fisica', det.cantidad_fisica)
+                    det.save()
+                except DetalleInventario.DoesNotExist:
+                    pass
+        inventario = (Inventario.objects
+                      .prefetch_related('detalles__material')
+                      .get(pk=inventario.pk))
+        return Response(InventarioSerializer(inventario).data)
+
     @action(detail=True, methods=['post'])
     def cerrar(self, request, pk=None):
         inventario = self.get_object()
