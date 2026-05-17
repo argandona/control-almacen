@@ -196,15 +196,19 @@ class MaterialViewSet(viewsets.ModelViewSet):
             Q(total_pedidos__gt=0) | Q(total_devoluciones__gt=0) | Q(total_consumos__gt=0)
         ).order_by('descripcion')
 
-        data = [{
-            'id_material':      m.id_material,
-            'matricula':        m.matricula,
-            'descripcion':      m.descripcion,
-            'total_pedidos':    m.total_pedidos,
-            'total_devoluciones': m.total_devoluciones,
-            'total_consumos':   m.total_consumos,
-            'saldo_actual':     m.total_pedidos - m.total_devoluciones - m.total_consumos,
-        } for m in materiales]
+        data = []
+        for m in materiales:
+            saldo = m.total_pedidos - m.total_devoluciones - m.total_consumos
+            if saldo > 0:
+                data.append({
+                    'id_material':        m.id_material,
+                    'matricula':          m.matricula,
+                    'descripcion':        m.descripcion,
+                    'total_pedidos':      m.total_pedidos,
+                    'total_devoluciones': m.total_devoluciones,
+                    'total_consumos':     m.total_consumos,
+                    'saldo_actual':       saldo,
+                })
         return Response(data)
 
 
@@ -783,7 +787,7 @@ class InventarioViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             inventario = Inventario.objects.create(
                 camion=camion, usuario=usuario, mes=mes, anio=anio, estado='borrador')
-            for sc in StockCamion.objects.filter(camion=camion).select_related('material'):
+            for sc in StockCamion.objects.filter(camion=camion, cantidad__gt=0).select_related('material'):
                 DetalleInventario.objects.create(
                     inventario=inventario,
                     material=sc.material,
