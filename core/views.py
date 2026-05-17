@@ -770,7 +770,7 @@ class InventarioViewSet(viewsets.ModelViewSet):
 
         existente = (Inventario.objects
                      .prefetch_related('detalles__material')
-                     .filter(camion=camion, mes=mes, anio=anio)
+                     .filter(camion=camion, mes=mes, anio=anio, estado='borrador')
                      .first())
         if existente:
             return Response(InventarioSerializer(existente).data)
@@ -819,6 +819,54 @@ class InventarioViewSet(viewsets.ModelViewSet):
         inventario = self.get_object()
         if inventario.estado == 'cerrado':
             return Response({'detail': 'Ya está cerrado.'}, status=400)
-        inventario.estado = 'cerrado'
-        inventario.save()
+
+        with transaction.atomic():
+            inventario = (Inventario.objects
+                          .prefetch_related('detalles__material')
+                          .select_related('camion','usuario')
+                          .get(pk=inventario.pk))
+
+            # Sincronizar StockCamion con el conteo físico
+            if inventario.camion_id:
+                for det in inventario.detalles.all():
+                    StockCamion.objects.filter(
+                        camion=inventario.camion, material=det.material
+                    ).update(cantidad=det.cantidad_fisica)
+
+            inventario.estado = 'cerrado'
+            inventario.save()
+
+        # Notificar al encargado del camión con las diferencias
+        if inventario.camion_id:
+            from datetime import date as _date
+            from django.db.models import Q as _Q
+            from .fcm import send_notification
+
+            hoy = _date.today()
+            asignacion = UsuarioCamion.objects.filter(
+                camion=inventario.camion,
+                activo=True,
+                fecha_inicio__lte=hoy,
+            ).filter(
+                _Q(fecha_fin__isnull=True) | _Q(fecha_fin__gte=hoy)
+            ).select_related('usuario').first()
+
+            if asignacion and asignacion.usuario.fcm_token:
+                diffs = [d for d in inventario.detalles.all() if d.diferencia != 0]
+                if diffs:
+                    lineas = ', '.join(
+                        f'{d.material.matricula}: {d.diferencia:+d}' for d in diffs[:5]
+                    )
+                    if len(diffs) > 5:
+                        lineas += f' y {len(diffs)-5} más'
+                    body = f'Inventario cerrado. Diferencias: {lineas}'
+                else:
+                    body = 'Inventario cerrado. Sin diferencias.'
+                send_notification(
+                    [asignacion.usuario.fcm_token],
+                    title=f'Inventario camión {inventario.camion.placa} cerrado',
+                    body=body,
+                    data={'tipo': 'inventario_cerrado', 'inventario_id': str(inventario.pk)},
+                )
+
         return Response({'detail': 'Inventario cerrado.'})

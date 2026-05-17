@@ -431,7 +431,6 @@ class Inventario(models.Model):
     observacion   = models.TextField(blank=True)
     class Meta:
         db_table = "inventario"
-        unique_together = [("camion","mes","anio"),("almacen","mes","anio")]
     def clean(self):
         if self.usuario_id and not self.usuario.puede_hacer_inventario():
             raise ValidationError("Solo el Encargado de Almacén puede realizar inventarios.")
