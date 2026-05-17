@@ -147,9 +147,10 @@ def portal_plantilla(request):
 
 def _procesar_y_aprobar(request, archivo, usuario_upload):
     """
-    1. Parsea el Excel y crea/actualiza registros UploadConsumo + Consumo + DetalleConsumo.
-    2. Si no hay errores de parseo, intenta aprobar (descontar StockCamion).
-    Devuelve un dict con el resultado para mostrar en el template.
+    Flujo en tres pasos (todo en memoria antes de tocar la BD):
+      1. Parsear Excel → detectar errores de formato/técnico/fecha.
+      2. Verificar stock para TODOS los materiales → mostrar todos los faltantes.
+      3. Solo si paso 1 y 2 sin errores → guardar en BD y descontar stock.
     """
     try:
         wb   = openpyxl.load_workbook(archivo, data_only=True)
@@ -170,7 +171,6 @@ def _procesar_y_aprobar(request, archivo, usuario_upload):
         for m in Material.objects.filter(matricula__in=matriculas_excel)
     }
 
-    # El SST se lee de la primera fila de datos
     codigo_sst = str(rows[1][0]).strip() if rows[1][0] is not None else ''
     try:
         sst = SST.objects.get(codigo=codigo_sst)
@@ -178,152 +178,163 @@ def _procesar_y_aprobar(request, archivo, usuario_upload):
         messages.error(request, f'El código SST "{codigo_sst}" no existe en el sistema.')
         return None
 
+    # Verificar si ya existe un upload aprobado para este SST
+    upload_existente = UploadConsumo.objects.filter(sst=sst).first()
+    if upload_existente and upload_existente.estado == 'aprobado':
+        return {'ya_aprobado': True, 'sst': codigo_sst, 'upload': upload_existente}
+
+    # ── Paso 1: Parsear Excel en memoria ─────────────────────────────────────
+    # plan = lista de dicts con todos los datos ya validados
     errores_parseo = []
-    creados        = 0
-    upload         = None
+    plan = []  # [{tecnico, camion, suministro, fecha, materiales: [(material, qty), ...]}]
 
-    # ── Paso 1: Crear registros ───────────────────────────────────────────────
-    try:
-        with transaction.atomic():
-            upload, _ = UploadConsumo.objects.get_or_create(
-                sst=sst,
-                defaults={
-                    'usuario':        usuario_upload,
-                    'nombre_archivo': archivo.name,
-                    'estado':         'pendiente',
-                },
-            )
+    for num_fila, row in enumerate(rows[1:], start=2):
+        if not any(row):
+            continue
 
-            if upload.estado == 'aprobado':
-                return {
-                    'ya_aprobado': True,
-                    'sst':         codigo_sst,
-                    'upload':      upload,
-                }
+        suministro  = str(row[1]).strip() if row[1] is not None else ''
+        fecha_raw   = row[2]
+        tecnico_str = str(row[3]).strip().upper() if row[3] is not None else ''
+        cantidades  = row[4:]
 
-            for num_fila, row in enumerate(rows[1:], start=2):
-                if not any(row):
-                    continue
+        if isinstance(fecha_raw, (datetime.date, datetime.datetime)):
+            fecha = fecha_raw if isinstance(fecha_raw, datetime.date) else fecha_raw.date()
+        else:
+            try:
+                fecha = datetime.datetime.strptime(str(fecha_raw).strip(), '%d/%m/%Y').date()
+            except ValueError:
+                errores_parseo.append(f'Fila {num_fila}: fecha inválida "{fecha_raw}" (usa dd/mm/aaaa).')
+                continue
 
-                suministro  = str(row[1]).strip() if row[1] is not None else ''
-                fecha_raw   = row[2]
-                tecnico_str = str(row[3]).strip().upper() if row[3] is not None else ''
-                cantidades  = row[4:]
+        qs_tec = Usuario.objects.filter(nombre__icontains=tecnico_str)
+        if not qs_tec.exists():
+            errores_parseo.append(f'Fila {num_fila}: técnico "{tecnico_str}" no encontrado.')
+            continue
+        if qs_tec.count() > 1:
+            nombres = ', '.join(qs_tec.values_list('nombre', flat=True)[:3])
+            errores_parseo.append(
+                f'Fila {num_fila}: "{tecnico_str}" coincide con varios usuarios ({nombres}…).')
+            continue
+        tecnico = qs_tec.first()
 
-                # Parsear fecha
-                if isinstance(fecha_raw, (datetime.date, datetime.datetime)):
-                    fecha = fecha_raw if isinstance(fecha_raw, datetime.date) else fecha_raw.date()
-                else:
-                    try:
-                        fecha = datetime.datetime.strptime(str(fecha_raw).strip(), '%d/%m/%Y').date()
-                    except ValueError:
-                        errores_parseo.append(f'Fila {num_fila}: fecha inválida "{fecha_raw}" (usa dd/mm/aaaa).')
-                        continue
+        camion = UsuarioCamion.camion_activo_de_usuario(tecnico, fecha)
+        if not camion:
+            errores_parseo.append(
+                f'Fila {num_fila}: "{tecnico.nombre}" sin camión asignado el {fecha:%d/%m/%Y}.')
+            continue
 
-                # Buscar técnico
-                qs_tec = Usuario.objects.filter(nombre__icontains=tecnico_str)
-                if not qs_tec.exists():
-                    errores_parseo.append(f'Fila {num_fila}: técnico "{tecnico_str}" no encontrado.')
-                    continue
-                if qs_tec.count() > 1:
-                    nombres = ', '.join(qs_tec.values_list('nombre', flat=True)[:3])
-                    errores_parseo.append(
-                        f'Fila {num_fila}: "{tecnico_str}" coincide con varios usuarios ({nombres}…).')
-                    continue
-                tecnico = qs_tec.first()
+        items_fila = []
+        for i, cantidad in enumerate(cantidades):
+            if i >= len(matriculas_excel):
+                break
+            try:
+                qty = int(cantidad) if cantidad not in (None, '') else 0
+            except (TypeError, ValueError):
+                qty = 0
+            if qty == 0:
+                continue
+            material = materiales_map.get(matriculas_excel[i])
+            if not material:
+                errores_parseo.append(
+                    f'Fila {num_fila}: matrícula "{matriculas_excel[i]}" no existe en el sistema.')
+                continue
+            items_fila.append((material, qty, camion))
 
-                # Buscar camión activo
-                camion = UsuarioCamion.camion_activo_de_usuario(tecnico, fecha)
-                if not camion:
-                    errores_parseo.append(
-                        f'Fila {num_fila}: "{tecnico.nombre}" no tiene camión asignado el {fecha:%d/%m/%Y}.')
-                    continue
+        plan.append({
+            'tecnico':    tecnico,
+            'camion':     camion,
+            'suministro': suministro,
+            'fecha':      fecha,
+            'items':      items_fila,
+        })
 
-                consumo, nuevo = Consumo.objects.get_or_create(
-                    upload=upload,
-                    usuario_consume=tecnico,
-                    camion=camion,
-                    suministro=suministro,
-                    fecha=fecha,
-                )
-
-                for i, cantidad in enumerate(cantidades):
-                    if i >= len(matriculas_excel):
-                        break
-                    try:
-                        qty = int(cantidad) if cantidad not in (None, '') else 0
-                    except (TypeError, ValueError):
-                        qty = 0
-                    if qty == 0:
-                        continue
-                    material = materiales_map.get(matriculas_excel[i])
-                    if not material:
-                        errores_parseo.append(
-                            f'Fila {num_fila}: matrícula "{matriculas_excel[i]}" no existe.')
-                        continue
-                    DetalleConsumo.objects.get_or_create(
-                        consumo=consumo,
-                        material=material,
-                        defaults={'cantidad': qty},
-                    )
-
-                if nuevo:
-                    creados += 1
-
-            if errores_parseo:
-                # Si hay errores de parseo abortamos todo para no dejar datos a medias
-                raise _ParseError('rollback por errores de parseo')
-
-    except _ParseError:
+    if errores_parseo:
         return {
             'aprobado':      False,
             'sst':           codigo_sst,
             'archivo':       archivo.name,
-            'creados':       0,
             'errores':       errores_parseo,
             'errores_stock': [],
         }
-    except Exception as exc:
-        messages.error(request, f'Error inesperado al procesar: {exc}')
-        return None
 
-    # ── Paso 2: Aprobar y descontar stock ─────────────────────────────────────
+    # ── Paso 2: Verificar stock de TODOS los materiales ───────────────────────
+    # Acumular total a descontar por (camion_id, material_id)
+    totales = {}  # (camion_id, material_id) -> {'qty': int, 'matricula': str, 'placa': str}
+    for fila in plan:
+        for material, qty, camion in fila['items']:
+            key = (camion.pk, material.pk)
+            if key not in totales:
+                totales[key] = {'qty': 0, 'matricula': material.matricula,
+                                'placa': camion.placa, 'material': material, 'camion': camion}
+            totales[key]['qty'] += qty
+
     errores_stock = []
-    try:
-        with transaction.atomic():
-            upload.refresh_from_db()
-            for consumo in upload.consumos.prefetch_related('detalles__material').select_related('camion'):
-                for det in consumo.detalles.all():
-                    try:
-                        stock = StockCamion.objects.select_for_update().get(
-                            camion=consumo.camion, material=det.material
-                        )
-                        stock.descontar(det.cantidad)
-                    except StockCamion.DoesNotExist:
-                        errores_stock.append(
-                            f'{det.material.matricula} no tiene stock en camión {consumo.camion.placa}.')
-                        raise _StockError()
-                    except Exception as exc:
-                        errores_stock.append(str(exc))
-                        raise _StockError()
-            upload.estado = 'aprobado'
-            upload.save()
-    except _StockError:
-        pass  # upload queda en 'pendiente', errores_stock describe el problema
+    for key, info in totales.items():
+        try:
+            stock = StockCamion.objects.get(camion_id=key[0], material_id=key[1])
+            if stock.cantidad < info['qty']:
+                errores_stock.append(
+                    f'{info["matricula"]} — camión {info["placa"]}: '
+                    f'necesita {info["qty"]}, disponible {stock.cantidad} '
+                    f'(faltan {info["qty"] - stock.cantidad})')
+        except StockCamion.DoesNotExist:
+            errores_stock.append(
+                f'{info["matricula"]} — camión {info["placa"]}: '
+                f'no tiene stock registrado (necesita {info["qty"]})')
+
+    if errores_stock:
+        return {
+            'aprobado':      False,
+            'sst':           codigo_sst,
+            'archivo':       archivo.name,
+            'errores':       [],
+            'errores_stock': errores_stock,
+        }
+
+    # ── Paso 3: Todo OK → guardar en BD y descontar stock ────────────────────
+    with transaction.atomic():
+        upload, _ = UploadConsumo.objects.get_or_create(
+            sst=sst,
+            defaults={
+                'usuario':        usuario_upload,
+                'nombre_archivo': archivo.name,
+                'estado':         'pendiente',
+            },
+        )
+
+        creados = 0
+        for fila in plan:
+            consumo, nuevo = Consumo.objects.get_or_create(
+                upload=upload,
+                usuario_consume=fila['tecnico'],
+                camion=fila['camion'],
+                suministro=fila['suministro'],
+                fecha=fila['fecha'],
+            )
+            for material, qty, _ in fila['items']:
+                DetalleConsumo.objects.get_or_create(
+                    consumo=consumo,
+                    material=material,
+                    defaults={'cantidad': qty},
+                )
+            if nuevo:
+                creados += 1
+
+        # Descontar stock (ya validado → no fallará)
+        for info in totales.values():
+            stock = StockCamion.objects.get(camion=info['camion'], material=info['material'])
+            stock.cantidad -= info['qty']
+            stock.save()
+
+        upload.estado = 'aprobado'
+        upload.save()
 
     return {
-        'aprobado':      upload.estado == 'aprobado',
-        'sst':           codigo_sst,
-        'archivo':       archivo.name,
-        'creados':       creados,
+        'aprobado': True,
+        'sst':      codigo_sst,
+        'archivo':  archivo.name,
+        'creados':  creados,
         'errores':       [],
-        'errores_stock': errores_stock,
+        'errores_stock': [],
         'upload':        upload,
     }
-
-
-class _ParseError(Exception):
-    pass
-
-class _StockError(Exception):
-    pass
