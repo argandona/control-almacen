@@ -1,3 +1,4 @@
+import hashlib
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 
@@ -124,6 +125,14 @@ class ExcelImportMixin:
 def _str(val, default=""):
     return str(val).strip() if val is not None else default
 
+def _hash_clave(clave: str) -> str:
+    """SHA256 — igual que authentication.py."""
+    h = str(clave).strip()
+    # Si ya tiene 64 chars hex, asumimos que ya está hasheada
+    if len(h) == 64 and all(c in "0123456789abcdef" for c in h):
+        return h
+    return hashlib.sha256(h.encode()).hexdigest()
+
 
 # ── Empresa ───────────────────────────────────────────────────────────────────
 @admin.register(Empresa)
@@ -171,8 +180,11 @@ class UsuarioAdmin(ExcelImportMixin, admin.ModelAdmin):
         ("telefono", "Teléfono"),
     ]
 
+    def save_model(self, request, obj, form, change):
+        obj.clave = _hash_clave(obj.clave)
+        super().save_model(request, obj, form, change)
+
     def import_row(self, data):
-        from django.contrib.auth.hashers import make_password
         rol = Rol.objects.get(descripcion__icontains=_str(data["rol"]))
         empresa = None
         if data.get("empresa") and _str(data["empresa"]):
@@ -181,7 +193,7 @@ class UsuarioAdmin(ExcelImportMixin, admin.ModelAdmin):
             email=_str(data["email"]),
             defaults={
                 "nombre":   _str(data["nombre"]),
-                "clave":    make_password(_str(data["clave"])),
+                "clave":    _hash_clave(_str(data["clave"])),
                 "rol":      rol,
                 "empresa":  empresa,
                 "telefono": _str(data.get("telefono")),
