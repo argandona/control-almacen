@@ -231,13 +231,18 @@ class StockCamionViewSet(viewsets.ModelViewSet):
         from django.db.models import Q
 
         usuario_id = request.query_params.get('usuario')
-        qs = StockCamion.objects.filter(cantidad__gt=0).select_related('camion', 'material')
 
+        # Encargado ve solo materiales con stock > 0 (su vista no muestra negativos).
+        # Enc. almacén (sin usuario_id) ve todo, incluyendo negativos.
         if usuario_id:
             ids = UsuarioCamion.objects.filter(
                 usuario_id=usuario_id
             ).values_list('camion_id', flat=True).distinct()
-            qs = qs.filter(camion_id__in=ids)
+            qs = StockCamion.objects.filter(
+                cantidad__gt=0, camion_id__in=ids
+            ).select_related('camion', 'material')
+        else:
+            qs = StockCamion.objects.exclude(cantidad=0).select_related('camion', 'material')
 
         hoy = date.today()
         asignaciones = {

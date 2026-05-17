@@ -143,18 +143,12 @@
       </div>
 
       {% else %}
-      <!-- Errores de parseo o stock -->
+      <!-- Errores de parseo -->
       <div class="card border-danger">
         <div class="card-header bg-danger text-white fw-bold">
-          <i class="bi bi-x-circle me-2"></i>
-          {% if resultado.errores %}
-            Errores en el archivo — no se guardó ningún registro
-          {% else %}
-            Errores de stock — consumos en estado pendiente
-          {% endif %}
+          <i class="bi bi-x-circle me-2"></i>Errores en el archivo — no se guardó ningún registro
         </div>
         <div class="card-body">
-          {% if resultado.errores %}
           <p class="text-muted small mb-2">Corrige los siguientes errores en el Excel y vuelve a subirlo:</p>
           <ul class="list-group list-group-flush mb-0">
             {% for e in resultado.errores %}
@@ -163,35 +157,6 @@
             </li>
             {% endfor %}
           </ul>
-          {% endif %}
-
-          {% if resultado.errores_stock %}
-          <p class="text-muted small mb-2 {% if resultado.errores %}mt-3{% endif %}">
-            <strong>Stock insuficiente</strong> — corrige las cantidades en el Excel y vuelve a subir:
-          </p>
-          <table class="table table-sm table-bordered mb-0">
-            <thead class="table-warning">
-              <tr>
-                <th>Matrícula</th>
-                <th>Camión</th>
-                <th class="text-center">Detalle</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for e in resultado.errores_stock %}
-              <tr>
-                <td colspan="3" class="small py-1">
-                  <i class="bi bi-exclamation-triangle text-warning me-1"></i>{{ e }}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-          <div class="alert alert-info py-2 mt-2 mb-0 small">
-            <i class="bi bi-info-circle me-1"></i>
-            No se guardó ningún registro. Corrige las cantidades y vuelve a subir el Excel.
-          </div>
-          {% endif %}
         </div>
       </div>
       {% endif %}

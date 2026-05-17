@@ -250,48 +250,22 @@ def _procesar_y_aprobar(request, archivo, usuario_upload):
 
     if errores_parseo:
         return {
-            'aprobado':      False,
-            'sst':           codigo_sst,
-            'archivo':       archivo.name,
-            'errores':       errores_parseo,
-            'errores_stock': [],
+            'aprobado': False,
+            'sst':      codigo_sst,
+            'archivo':  archivo.name,
+            'errores':  errores_parseo,
         }
 
-    # ── Paso 2: Verificar stock de TODOS los materiales ───────────────────────
-    # Acumular total a descontar por (camion_id, material_id)
-    totales = {}  # (camion_id, material_id) -> {'qty': int, 'matricula': str, 'placa': str}
+    # ── Paso 2: Acumular totales a descontar por (camion, material) ───────────
+    totales = {}
     for fila in plan:
         for material, qty, camion in fila['items']:
             key = (camion.pk, material.pk)
             if key not in totales:
-                totales[key] = {'qty': 0, 'matricula': material.matricula,
-                                'placa': camion.placa, 'material': material, 'camion': camion}
+                totales[key] = {'qty': 0, 'material': material, 'camion': camion}
             totales[key]['qty'] += qty
 
-    errores_stock = []
-    for key, info in totales.items():
-        try:
-            stock = StockCamion.objects.get(camion_id=key[0], material_id=key[1])
-            if stock.cantidad < info['qty']:
-                errores_stock.append(
-                    f'{info["matricula"]} — camión {info["placa"]}: '
-                    f'necesita {info["qty"]}, disponible {stock.cantidad} '
-                    f'(faltan {info["qty"] - stock.cantidad})')
-        except StockCamion.DoesNotExist:
-            errores_stock.append(
-                f'{info["matricula"]} — camión {info["placa"]}: '
-                f'no tiene stock registrado (necesita {info["qty"]})')
-
-    if errores_stock:
-        return {
-            'aprobado':      False,
-            'sst':           codigo_sst,
-            'archivo':       archivo.name,
-            'errores':       [],
-            'errores_stock': errores_stock,
-        }
-
-    # ── Paso 3: Todo OK → guardar en BD y descontar stock ────────────────────
+    # ── Paso 3: Guardar en BD y descontar stock (puede quedar negativo) ───────
     with transaction.atomic():
         upload, _ = UploadConsumo.objects.get_or_create(
             sst=sst,
@@ -334,7 +308,6 @@ def _procesar_y_aprobar(request, archivo, usuario_upload):
         'sst':      codigo_sst,
         'archivo':  archivo.name,
         'creados':  creados,
-        'errores':       [],
-        'errores_stock': [],
-        'upload':        upload,
+        'errores':  [],
+        'upload':   upload,
     }
