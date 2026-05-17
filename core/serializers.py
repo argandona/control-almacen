@@ -341,6 +341,34 @@ class DevolucionCreateSerializer(serializers.ModelSerializer):
         model  = Devolucion
         fields = ['camion','usuario','observacion','detalles']
 
+    def validate(self, data):
+        from django.db.models import Sum
+        camion   = data.get('camion')
+        detalles = data.get('detalles', [])
+        errores  = []
+        for det in detalles:
+            material        = det['material']
+            cant_solicitada = det['cantidad_solicitada']
+            try:
+                stock_actual = StockCamion.objects.get(camion=camion, material=material).cantidad
+            except StockCamion.DoesNotExist:
+                errores.append(f'{material.matricula}: sin stock registrado en este camión.')
+                continue
+            pendiente = (DetalleDevolucion.objects
+                         .filter(devolucion__camion=camion,
+                                 devolucion__estado='pendiente',
+                                 material=material)
+                         .aggregate(total=Sum('cantidad_solicitada'))['total'] or 0)
+            disponible = stock_actual - pendiente
+            if cant_solicitada > disponible:
+                errores.append(
+                    f'{material.matricula}: solicitás {cant_solicitada} pero solo hay '
+                    f'{disponible} disponible (stock {stock_actual}, en trámite {pendiente}).'
+                )
+        if errores:
+            raise serializers.ValidationError({'detalles': errores})
+        return data
+
     def create(self, validated_data):
         from django.db import transaction
         detalles_data = validated_data.pop('detalles')

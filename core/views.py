@@ -275,6 +275,21 @@ class StockCamionViewSet(viewsets.ModelViewSet):
                 'cantidad':    stock.cantidad,
             })
 
+        # Agregar cuánto hay en devoluciones pendientes por (camion, material)
+        from django.db.models import Sum as _Sum
+        camion_ids = list(camiones.keys())
+        pending_map = {}
+        for row in (DetalleDevolucion.objects
+                    .filter(devolucion__estado='pendiente',
+                            devolucion__camion_id__in=camion_ids)
+                    .values('devolucion__camion_id', 'material_id')
+                    .annotate(total=_Sum('cantidad_solicitada'))):
+            pending_map[(row['devolucion__camion_id'], row['material_id'])] = row['total']
+
+        for cid, camion_data in camiones.items():
+            for item in camion_data['items']:
+                item['pendiente_devolucion'] = pending_map.get((cid, item['material_id']), 0)
+
         return Response(list(camiones.values()))
 
 
