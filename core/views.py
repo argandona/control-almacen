@@ -893,4 +893,9 @@ class InventarioViewSet(viewsets.ModelViewSet):
                     data={'tipo': 'inventario_cerrado', 'inventario_id': str(inventario.pk)},
                 )
 
+        # Enviar PDF por correo al encargado del camión y al enc. almacén
+        from .pdf_inventario import enviar_pdf_inventario
+        encargado = asignacion.usuario if (inventario.camion_id and asignacion) else None
+        enviar_pdf_inventario(inventario, encargado_camion=encargado)
+
         return Response({'detail': 'Inventario cerrado.'})
