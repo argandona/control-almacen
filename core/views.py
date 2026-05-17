@@ -206,7 +206,7 @@ class MaterialViewSet(viewsets.ModelViewSet):
                     filter=Q(detalles_consumo__consumo__upload__estado='aprobado') & eq_c),
                 Value(0), output_field=out,
             ),
-        ).order_by('descripcion')
+        ).order_by('matricula')
 
         data = []
         for m in materiales:
@@ -256,9 +256,11 @@ class StockCamionViewSet(viewsets.ModelViewSet):
             ).values_list('camion_id', flat=True).distinct()
             qs = StockCamion.objects.filter(
                 cantidad__gt=0, camion_id__in=ids
-            ).select_related('camion', 'material')
+            ).select_related('camion', 'material').order_by('material__matricula')
         else:
-            qs = StockCamion.objects.exclude(cantidad=0).select_related('camion', 'material')
+            qs = (StockCamion.objects.exclude(cantidad=0)
+                  .select_related('camion', 'material')
+                  .order_by('material__matricula'))
 
         hoy = date.today()
         asignaciones = {
@@ -814,7 +816,7 @@ class InventarioViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             inventario = Inventario.objects.create(
                 camion=camion, usuario=usuario, mes=mes, anio=anio, estado='borrador')
-            for sc in StockCamion.objects.filter(camion=camion, cantidad__gt=0).select_related('material'):
+            for sc in StockCamion.objects.filter(camion=camion, cantidad__gt=0).select_related('material').order_by('material__matricula'):
                 DetalleInventario.objects.create(
                     inventario=inventario,
                     material=sc.material,

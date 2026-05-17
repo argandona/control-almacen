@@ -448,6 +448,7 @@ class DetalleInventario(models.Model):
     observacion      = models.TextField(blank=True)
     class Meta:
         db_table = "detalle_inventario"
+        ordering = ['material__matricula']
     def save(self, *args, **kwargs):
         self.diferencia = self.cantidad_fisica - self.cantidad_teorica
         super().save(*args, **kwargs)
