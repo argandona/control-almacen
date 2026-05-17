@@ -154,6 +154,59 @@ class MaterialViewSet(viewsets.ModelViewSet):
             qs = qs.filter(descripcion__icontains=q) | qs.filter(matricula__icontains=q)
         return qs
 
+    @action(detail=False, methods=['get'])
+    def resumen_stock(self, request):
+        """
+        GET /api/materiales/resumen_stock/
+        Devuelve por material: total_pedidos, total_devoluciones, total_consumos, saldo_actual
+        filtrado por empresa del usuario autenticado.
+        """
+        from django.db.models import Sum, Q, IntegerField
+        from django.db.models.functions import Coalesce
+        from django.db.models import Value
+
+        try:
+            usr = Usuario.objects.get(pk=request.user.id_usuario)
+            empresa_id = usr.empresa_id
+        except (AttributeError, Usuario.DoesNotExist):
+            empresa_id = None
+
+        eq_p = Q(detalles_pedido__pedido__camion__empresa_id=empresa_id) if empresa_id else Q()
+        eq_d = Q(detalles_devolucion__devolucion__camion__empresa_id=empresa_id) if empresa_id else Q()
+        eq_c = Q(detalles_consumo__consumo__camion__empresa_id=empresa_id) if empresa_id else Q()
+
+        out = IntegerField()
+        materiales = Material.objects.annotate(
+            total_pedidos=Coalesce(
+                Sum('detalles_pedido__cantidad_aprobada',
+                    filter=Q(detalles_pedido__pedido__estado='aprobado') & eq_p),
+                Value(0), output_field=out,
+            ),
+            total_devoluciones=Coalesce(
+                Sum('detalles_devolucion__cantidad_aprobada',
+                    filter=Q(detalles_devolucion__devolucion__estado='aprobado') & eq_d),
+                Value(0), output_field=out,
+            ),
+            total_consumos=Coalesce(
+                Sum('detalles_consumo__cantidad',
+                    filter=Q(detalles_consumo__consumo__upload__estado='aprobado') & eq_c),
+                Value(0), output_field=out,
+            ),
+        ).filter(
+            Q(total_pedidos__gt=0) | Q(total_devoluciones__gt=0) | Q(total_consumos__gt=0)
+        ).order_by('descripcion')
+
+        data = [{
+            'id_material':      m.id_material,
+            'matricula':        m.matricula,
+            'descripcion':      m.descripcion,
+            'total_pedidos':    m.total_pedidos,
+            'total_devoluciones': m.total_devoluciones,
+            'total_consumos':   m.total_consumos,
+            'saldo_actual':     m.total_pedidos - m.total_devoluciones - m.total_consumos,
+        } for m in materiales]
+        return Response(data)
+
 
 # ── StockCamion ──────────────────────────────────────────────────────────────
 class StockCamionViewSet(viewsets.ModelViewSet):
