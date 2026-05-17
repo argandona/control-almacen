@@ -31,6 +31,23 @@
             <i class="bi bi-file-earmark-spreadsheet me-1"></i>Consumos
           </a>
         </li>
+        {% if usuario.rol_id == 1 or usuario.rol_id == 6 %}
+        <li class="nav-item">
+          <a class="nav-link {% block nav_pedidos %}{% endblock %}" href="{% url 'portal_pedidos' %}">
+            <i class="bi bi-cart-check me-1"></i>Pedidos
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% block nav_devoluciones %}{% endblock %}" href="{% url 'portal_devoluciones' %}">
+            <i class="bi bi-arrow-return-left me-1"></i>Devoluciones
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% block nav_matriz %}{% endblock %}" href="{% url 'portal_matriz' %}">
+            <i class="bi bi-table me-1"></i>Inventario
+          </a>
+        </li>
+        {% endif %}
         {% if usuario.rol_id == 1 %}
         <li class="nav-item">
           <a class="nav-link {% block nav_usuarios %}{% endblock %}" href="{% url 'portal_usuarios' %}">

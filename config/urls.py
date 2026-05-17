@@ -14,6 +14,10 @@ urlpatterns = [
     path('portal/logout/',                     portal_views.portal_logout,         name='portal_logout'),
     path('portal/',                            portal_views.portal_consumos,       name='portal_consumos'),
     path('portal/plantilla/',                  portal_views.portal_plantilla,      name='portal_plantilla'),
+    # Enc. Almacén — pedidos, devoluciones, matriz
+    path('portal/pedidos/',                    portal_views.portal_pedidos,        name='portal_pedidos'),
+    path('portal/devoluciones/',               portal_views.portal_devoluciones,   name='portal_devoluciones'),
+    path('portal/matriz/',                     portal_views.portal_matriz,         name='portal_matriz'),
     # SuperAdmin — gestión de usuarios
     path('portal/usuarios/',                   portal_views.portal_usuarios,       name='portal_usuarios'),
     path('portal/usuarios/nuevo/',             portal_views.portal_crear_usuario,  name='portal_crear_usuario'),

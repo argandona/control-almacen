@@ -1,0 +1,120 @@
+{% extends "portal/base.html" %}
+{% block title %}Devoluciones — Portal Encossa{% endblock %}
+{% block nav_devoluciones %}active{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-arrow-return-left me-2 text-success"></i>Devoluciones</h4>
+    <p class="text-muted small mb-0">Devoluciones de material desde los camiones al almacén.</p>
+  </div>
+</div>
+
+{# Filtros #}
+<div class="card mb-4">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-sm-3">
+        <label class="form-label small mb-1">Camión</label>
+        <select name="camion" class="form-select form-select-sm">
+          <option value="">— Todos —</option>
+          {% for c in camiones %}
+          <option value="{{ c.id_camion }}" {% if camion_id == c.id_camion|stringformat:"s" %}selected{% endif %}>{{ c.placa }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-sm-2">
+        <label class="form-label small mb-1">Estado</label>
+        <select name="estado" class="form-select form-select-sm">
+          <option value="">— Todos —</option>
+          <option value="pendiente" {% if estado_fil == "pendiente" %}selected{% endif %}>Pendiente</option>
+          <option value="aprobado"  {% if estado_fil == "aprobado"  %}selected{% endif %}>Aprobado</option>
+          <option value="rechazado" {% if estado_fil == "rechazado" %}selected{% endif %}>Rechazado</option>
+        </select>
+      </div>
+      <div class="col-sm-2">
+        <label class="form-label small mb-1">Desde</label>
+        <input type="date" name="desde" class="form-control form-control-sm" value="{{ desde }}">
+      </div>
+      <div class="col-sm-2">
+        <label class="form-label small mb-1">Hasta</label>
+        <input type="date" name="hasta" class="form-control form-control-sm" value="{{ hasta }}">
+      </div>
+      <div class="col-sm-auto">
+        <button type="submit" class="btn btn-sm btn-success">
+          <i class="bi bi-funnel me-1"></i>Filtrar
+        </button>
+        <a href="{% url 'portal_devoluciones' %}" class="btn btn-sm btn-outline-secondary ms-1">
+          <i class="bi bi-x-circle"></i>
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# Lista de devoluciones #}
+<div class="accordion" id="accDevoluciones">
+  {% for d in devoluciones %}
+  <div class="accordion-item border mb-2 rounded">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed py-2 rounded" type="button"
+              data-bs-toggle="collapse" data-bs-target="#dev{{ d.id_devolucion }}">
+        <div class="d-flex w-100 align-items-center gap-3">
+          <span class="fw-bold text-secondary small">#{{ d.id_devolucion }}</span>
+          <span class="badge
+            {% if d.estado == 'aprobado' %}bg-success
+            {% elif d.estado == 'pendiente' %}bg-warning text-dark
+            {% else %}bg-danger{% endif %}">
+            {{ d.get_estado_display }}
+          </span>
+          <span class="fw-semibold"><i class="bi bi-truck me-1"></i>{{ d.camion.placa }}</span>
+          <span class="text-muted small">{{ d.fecha|date:"d/m/Y" }}</span>
+          <span class="text-muted small ms-auto me-3">{{ d.usuario.nombre }}</span>
+        </div>
+      </button>
+    </h2>
+    <div id="dev{{ d.id_devolucion }}" class="accordion-collapse collapse">
+      <div class="accordion-body pt-2 pb-3">
+        {% if d.observacion %}
+        <p class="text-muted small mb-2"><i class="bi bi-chat-left-text me-1"></i>{{ d.observacion }}</p>
+        {% endif %}
+        {% if d.usuario_aprueba %}
+        <p class="text-muted small mb-2">
+          <i class="bi bi-person-check me-1 text-success"></i>
+          Aprobado por <strong>{{ d.usuario_aprueba.nombre }}</strong>
+          {% if d.fecha_aprobacion %}el {{ d.fecha_aprobacion|date:"d/m/Y" }}{% endif %}
+        </p>
+        {% endif %}
+        <table class="table table-sm table-bordered mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Matrícula</th>
+              <th>Material</th>
+              <th class="text-end">Solicitado</th>
+              <th class="text-end">Aprobado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for det in d.detalles.all %}
+            <tr>
+              <td class="fw-semibold small">{{ det.material.matricula }}</td>
+              <td class="small">{{ det.material.descripcion }}</td>
+              <td class="text-end">{{ det.cantidad_solicitada }}</td>
+              <td class="text-end fw-bold {% if det.cantidad_aprobada < det.cantidad_solicitada %}text-warning{% endif %}">
+                {{ det.cantidad_aprobada }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% empty %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-inbox fs-2 d-block mb-2"></i>No hay devoluciones con los filtros seleccionados.
+  </div>
+  {% endfor %}
+</div>
+<div class="text-muted small mt-2">{{ devoluciones|length }} devolución(es) encontrada(s)</div>
+{% endblock %}

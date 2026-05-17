@@ -1,0 +1,161 @@
+{% extends "portal/base.html" %}
+{% block title %}Inventario — Portal Encossa{% endblock %}
+{% block nav_matriz %}active{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="fw-bold mb-0"><i class="bi bi-table me-2 text-success"></i>Inventario — Resumen de Movimientos</h4>
+    <p class="text-muted small mb-0">Pedidos + Consumos − Devoluciones = Saldo actual por material.</p>
+  </div>
+</div>
+
+{# Filtros #}
+<div class="card mb-4">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-sm-3">
+        <label class="form-label small mb-1">Camión</label>
+        <select name="camion" class="form-select form-select-sm">
+          <option value="">— Todos los camiones —</option>
+          {% for c in camiones %}
+          <option value="{{ c.id_camion }}" {% if camion_id == c.id_camion|stringformat:"s" %}selected{% endif %}>{{ c.placa }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-sm-2">
+        <label class="form-label small mb-1">Desde</label>
+        <input type="date" name="desde" class="form-control form-control-sm" value="{{ desde }}">
+      </div>
+      <div class="col-sm-2">
+        <label class="form-label small mb-1">Hasta</label>
+        <input type="date" name="hasta" class="form-control form-control-sm" value="{{ hasta }}">
+      </div>
+      <div class="col-sm-auto">
+        <button type="submit" class="btn btn-sm btn-success">
+          <i class="bi bi-funnel me-1"></i>Filtrar
+        </button>
+        <a href="{% url 'portal_matriz' %}" class="btn btn-sm btn-outline-secondary ms-1">
+          <i class="bi bi-x-circle"></i>
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# Leyenda de la fórmula #}
+<div class="d-flex gap-3 mb-3 flex-wrap">
+  <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2">
+    <i class="bi bi-cart-plus me-1"></i>Pedidos aprobados
+  </span>
+  <span class="text-muted fw-bold align-self-center">−</span>
+  <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-3 py-2">
+    <i class="bi bi-box-arrow-right me-1"></i>Consumos
+  </span>
+  <span class="text-muted fw-bold align-self-center">+</span>
+  <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-3 py-2">
+    <i class="bi bi-arrow-return-left me-1"></i>Devoluciones aprobadas
+  </span>
+  <span class="text-muted fw-bold align-self-center">=</span>
+  <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2">
+    <i class="bi bi-box-seam me-1"></i>Saldo actual
+  </span>
+</div>
+
+{# Matriz #}
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" id="tablaMatriz">
+        <thead class="table-dark">
+          <tr>
+            <th style="min-width:100px">Matrícula</th>
+            <th style="min-width:200px">Descripción</th>
+            <th class="text-end" style="min-width:100px">
+              <i class="bi bi-cart-plus me-1 text-primary"></i>Pedidos
+            </th>
+            <th class="text-end" style="min-width:100px">
+              <i class="bi bi-box-arrow-right me-1 text-warning"></i>Consumos
+            </th>
+            <th class="text-end" style="min-width:110px">
+              <i class="bi bi-arrow-return-left me-1 text-info"></i>Devoluciones
+            </th>
+            <th class="text-end" style="min-width:110px">
+              <i class="bi bi-box-seam me-1 text-success"></i>Saldo Actual
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for fila in filas %}
+          <tr>
+            <td class="fw-semibold small font-monospace">{{ fila.material.matricula }}</td>
+            <td class="small">{{ fila.material.descripcion }}</td>
+            <td class="text-end text-primary fw-semibold">{{ fila.pedidos }}</td>
+            <td class="text-end text-warning-emphasis fw-semibold">{{ fila.consumos }}</td>
+            <td class="text-end text-info-emphasis fw-semibold">{{ fila.devoluciones }}</td>
+            <td class="text-end fw-bold">
+              {% if fila.stock_actual < 0 %}
+                <span class="text-danger">{{ fila.stock_actual }}</span>
+                <i class="bi bi-exclamation-triangle-fill text-danger ms-1" title="Stock negativo — pendiente reposición"></i>
+              {% elif fila.stock_actual == 0 %}
+                <span class="text-warning">0</span>
+              {% else %}
+                <span class="text-success">{{ fila.stock_actual }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-5">
+              <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+              Sin movimientos registrados para los filtros seleccionados.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        {% if filas %}
+        <tfoot class="table-secondary fw-bold">
+          <tr>
+            <td colspan="2" class="text-end small">TOTALES</td>
+            <td class="text-end text-primary">
+              {% with total=0 %}
+              {% for f in filas %}{% with total=total|add:f.pedidos %}{% endwith %}{% endfor %}
+              {{ filas|length }}
+              {% endwith %}
+            </td>
+            <td></td><td></td><td></td>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+  <div class="card-footer d-flex justify-content-between align-items-center text-muted small">
+    <span>{{ filas|length }} material(es)</span>
+    <span>
+      <i class="bi bi-circle-fill text-success me-1"></i>Stock positivo &nbsp;
+      <i class="bi bi-circle-fill text-warning me-1"></i>Stock en cero &nbsp;
+      <i class="bi bi-circle-fill text-danger me-1"></i>Stock negativo (pendiente reposición)
+    </span>
+  </div>
+</div>
+
+{# Buscador rápido en tabla #}
+<div class="mt-3">
+  <input type="text" id="buscador" class="form-control form-control-sm w-auto"
+         placeholder="Buscar matrícula o descripción…" oninput="filtrarTabla()">
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function filtrarTabla() {
+  const q   = document.getElementById('buscador').value.toLowerCase();
+  const trs = document.querySelectorAll('#tablaMatriz tbody tr');
+  trs.forEach(tr => {
+    const txt = tr.textContent.toLowerCase();
+    tr.style.display = txt.includes(q) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

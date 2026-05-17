@@ -8,9 +8,14 @@ from django.http import HttpResponse
 from django.contrib import messages
 from django.db import transaction
 
+from django.db.models import Sum, Q
+
 from .models import (
-    Usuario, Rol, Empresa, Material, StockCamion,
+    Usuario, Rol, Empresa, Camion, Material, StockCamion,
     UploadConsumo, Consumo, DetalleConsumo,
+    Pedido, DetallePedido,
+    Devolucion, DetalleDevolucion,
+    Inventario, DetalleInventario,
     SST, UsuarioCamion,
 )
 from .security import (
@@ -356,6 +361,162 @@ def _procesar_y_aprobar(request, archivo, usuario_upload):
         'errores':  [],
         'upload':   upload,
     }
+
+
+# ── Pedidos / Devoluciones / Matriz (Enc. Almacén + SuperAdmin) ──────────────
+
+def _almacen_required(view_fn):
+    def wrapper(request, *args, **kwargs):
+        usuario = _usuario_session(request)
+        if not usuario:
+            return redirect('portal_login')
+        if usuario.rol_id not in (Rol.ENCARGADO_ALMACEN, Rol.SUPERADMIN):
+            messages.error(request, 'Acceso restringido al Encargado de Almacén.')
+            return redirect('portal_consumos')
+        return view_fn(request, *args, **kwargs)
+    wrapper.__name__ = view_fn.__name__
+    return wrapper
+
+
+def _camiones_empresa(usuario):
+    """Devuelve QS de camiones visibles para el usuario."""
+    if usuario.empresa_id:
+        return Camion.objects.filter(empresa_id=usuario.empresa_id, activo=True).order_by('placa')
+    return Camion.objects.filter(activo=True).order_by('placa')
+
+
+@_almacen_required
+def portal_pedidos(request):
+    usuario  = _usuario_session(request)
+    camiones = _camiones_empresa(usuario)
+
+    camion_id  = request.GET.get('camion')
+    estado_fil = request.GET.get('estado', '')
+    desde      = request.GET.get('desde', '')
+    hasta      = request.GET.get('hasta', '')
+
+    qs = (Pedido.objects
+          .filter(camion__in=camiones)
+          .select_related('camion', 'usuario', 'usuario_aprueba')
+          .prefetch_related('detalles__material')
+          .order_by('-fecha'))
+
+    if camion_id:  qs = qs.filter(camion_id=camion_id)
+    if estado_fil: qs = qs.filter(estado=estado_fil)
+    if desde:      qs = qs.filter(fecha__gte=desde)
+    if hasta:      qs = qs.filter(fecha__lte=hasta)
+
+    return render(request, 'portal/pedidos.html', {
+        'usuario':    usuario,
+        'pedidos':    qs,
+        'camiones':   camiones,
+        'camion_id':  camion_id or '',
+        'estado_fil': estado_fil,
+        'desde':      desde,
+        'hasta':      hasta,
+    })
+
+
+@_almacen_required
+def portal_devoluciones(request):
+    usuario  = _usuario_session(request)
+    camiones = _camiones_empresa(usuario)
+
+    camion_id  = request.GET.get('camion')
+    estado_fil = request.GET.get('estado', '')
+    desde      = request.GET.get('desde', '')
+    hasta      = request.GET.get('hasta', '')
+
+    qs = (Devolucion.objects
+          .filter(camion__in=camiones)
+          .select_related('camion', 'usuario', 'usuario_aprueba')
+          .prefetch_related('detalles__material')
+          .order_by('-fecha'))
+
+    if camion_id:  qs = qs.filter(camion_id=camion_id)
+    if estado_fil: qs = qs.filter(estado=estado_fil)
+    if desde:      qs = qs.filter(fecha__gte=desde)
+    if hasta:      qs = qs.filter(fecha__lte=hasta)
+
+    return render(request, 'portal/devoluciones.html', {
+        'usuario':     usuario,
+        'devoluciones': qs,
+        'camiones':    camiones,
+        'camion_id':   camion_id or '',
+        'estado_fil':  estado_fil,
+        'desde':       desde,
+        'hasta':       hasta,
+    })
+
+
+@_almacen_required
+def portal_matriz(request):
+    usuario  = _usuario_session(request)
+    camiones = _camiones_empresa(usuario)
+
+    camion_id = request.GET.get('camion')
+    desde     = request.GET.get('desde', '')
+    hasta     = request.GET.get('hasta', '')
+
+    camiones_sel = camiones.filter(pk=camion_id) if camion_id else camiones
+
+    # ── Filtros de fecha para movimientos ────────────────────────────────────
+    q_ped = Q(pedido__camion__in=camiones_sel, pedido__estado='aprobado')
+    q_con = Q(consumo__camion__in=camiones_sel)
+    q_dev = Q(devolucion__camion__in=camiones_sel, devolucion__estado='aprobado')
+    if desde:
+        q_ped &= Q(pedido__fecha__gte=desde)
+        q_con &= Q(consumo__fecha__gte=desde)
+        q_dev &= Q(devolucion__fecha__gte=desde)
+    if hasta:
+        q_ped &= Q(pedido__fecha__lte=hasta)
+        q_con &= Q(consumo__fecha__lte=hasta)
+        q_dev &= Q(devolucion__fecha__lte=hasta)
+
+    # ── Aggregaciones por material ────────────────────────────────────────────
+    pedidos_map = {
+        r['material_id']: r['total']
+        for r in DetallePedido.objects.filter(q_ped).values('material_id').annotate(total=Sum('cantidad_aprobada'))
+    }
+    consumos_map = {
+        r['material_id']: r['total']
+        for r in DetalleConsumo.objects.filter(q_con).values('material_id').annotate(total=Sum('cantidad'))
+    }
+    devoluciones_map = {
+        r['material_id']: r['total']
+        for r in DetalleDevolucion.objects.filter(q_dev).values('material_id').annotate(total=Sum('cantidad_aprobada'))
+    }
+    stocks_map = {
+        r['material_id']: r['total']
+        for r in StockCamion.objects.filter(camion__in=camiones_sel).values('material_id').annotate(total=Sum('cantidad'))
+    }
+
+    # ── Unir todos los materiales con movimiento ──────────────────────────────
+    material_ids = (set(pedidos_map) | set(consumos_map) | set(devoluciones_map) | set(stocks_map))
+    materiales   = Material.objects.filter(pk__in=material_ids).order_by('matricula')
+
+    filas = []
+    for m in materiales:
+        p = pedidos_map.get(m.pk, 0) or 0
+        c = consumos_map.get(m.pk, 0) or 0
+        d = devoluciones_map.get(m.pk, 0) or 0
+        s = stocks_map.get(m.pk, 0) or 0
+        filas.append({
+            'material':     m,
+            'pedidos':      p,
+            'consumos':     c,
+            'devoluciones': d,
+            'stock_actual': s,
+        })
+
+    return render(request, 'portal/matriz.html', {
+        'usuario':    usuario,
+        'filas':      filas,
+        'camiones':   camiones,
+        'camion_id':  camion_id or '',
+        'desde':      desde,
+        'hasta':      hasta,
+    })
 
 
 # ── Gestión de usuarios (SuperAdmin) ─────────────────────────────────────────
