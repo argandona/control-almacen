@@ -1,0 +1,56 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Inicio</a> ›
+  <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_label|capfirst }}</a> ›
+  <a href="../">{{ opts.verbose_name_plural|capfirst }}</a> ›
+  Importar desde Excel
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Importar {{ opts.verbose_name_plural }}</h1>
+
+{% if messages %}
+  {% for message in messages %}
+    <p class="{% if message.tags %}{{ message.tags }}{% endif %}">{{ message }}</p>
+  {% endfor %}
+{% endif %}
+
+<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:16px;margin-bottom:24px">
+  <h3 style="margin-top:0">Columnas requeridas en el Excel</h3>
+  <table style="border-collapse:collapse;width:100%">
+    <tr style="background:#2563eb;color:white">
+      <th style="padding:8px 12px;text-align:left">Columna</th>
+      <th style="padding:8px 12px;text-align:left">Encabezado</th>
+    </tr>
+    {% for field, label in fields %}
+    <tr style="background:{% cycle '#ffffff' '#f8fafc' %}">
+      <td style="padding:6px 12px;font-family:monospace">{{ forloop.counter }}</td>
+      <td style="padding:6px 12px;font-weight:bold">{{ label }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p style="margin-bottom:0;color:#64748b;font-size:0.9em">
+    ⚠ La primera fila debe ser el encabezado. Los registros existentes se actualizan (no se duplican).
+  </p>
+</div>
+
+<form method="post" enctype="multipart/form-data" style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:24px">
+  {% csrf_token %}
+  <div style="margin-bottom:16px">
+    <label style="display:block;font-weight:bold;margin-bottom:8px">Archivo Excel (.xlsx)</label>
+    <input type="file" name="archivo" accept=".xlsx" required
+           style="border:1px solid #cbd5e1;border-radius:4px;padding:8px;width:100%">
+  </div>
+  <div style="display:flex;gap:12px">
+    <input type="submit" value="Importar" class="default"
+           style="background:#16a34a;color:white;border:none;padding:10px 20px;border-radius:4px;cursor:pointer;font-size:14px">
+    <a href="../" style="padding:10px 20px;border:1px solid #cbd5e1;border-radius:4px;text-decoration:none;color:#374151">
+      Cancelar
+    </a>
+  </div>
+</form>
+{% endblock %}
