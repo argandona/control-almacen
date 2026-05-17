@@ -491,22 +491,44 @@ def portal_matriz(request):
         for r in StockCamion.objects.filter(camion__in=camiones_sel).values('material_id').annotate(total=Sum('cantidad'))
     }
 
+    # ── Último inventario cerrado por camión → físico por material ────────────
+    from django.db.models import Max
+    last_inv_ids = list(
+        Inventario.objects
+        .filter(camion__in=camiones_sel, estado='cerrado')
+        .values('camion_id')
+        .annotate(last_id=Max('id_inventario'))
+        .values_list('last_id', flat=True)
+    )
+    inventario_map = {
+        r['material_id']: r['total']
+        for r in DetalleInventario.objects
+            .filter(inventario_id__in=last_inv_ids)
+            .values('material_id')
+            .annotate(total=Sum('cantidad_fisica'))
+    }
+
     # ── Unir todos los materiales con movimiento ──────────────────────────────
-    material_ids = (set(pedidos_map) | set(consumos_map) | set(devoluciones_map) | set(stocks_map))
-    materiales   = Material.objects.filter(pk__in=material_ids).order_by('matricula')
+    material_ids = (
+        set(pedidos_map) | set(consumos_map) |
+        set(devoluciones_map) | set(stocks_map) | set(inventario_map)
+    )
+    materiales = Material.objects.filter(pk__in=material_ids).order_by('matricula')
 
     filas = []
     for m in materiales:
-        p = pedidos_map.get(m.pk, 0) or 0
-        c = consumos_map.get(m.pk, 0) or 0
-        d = devoluciones_map.get(m.pk, 0) or 0
-        s = stocks_map.get(m.pk, 0) or 0
+        p   = pedidos_map.get(m.pk, 0) or 0
+        c   = consumos_map.get(m.pk, 0) or 0
+        d   = devoluciones_map.get(m.pk, 0) or 0
+        s   = stocks_map.get(m.pk, 0) or 0
+        inv = inventario_map.get(m.pk)          # None = sin inventario registrado
         filas.append({
-            'material':     m,
-            'pedidos':      p,
-            'consumos':     c,
-            'devoluciones': d,
-            'stock_actual': s,
+            'material':          m,
+            'pedidos':           p,
+            'consumos':          c,
+            'devoluciones':      d,
+            'inventario_fisico': inv,
+            'stock_actual':      s,
         })
 
     return render(request, 'portal/matriz.html', {
