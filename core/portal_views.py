@@ -8,7 +8,6 @@ from django.shortcuts import render, redirect
 from django.http import HttpResponse
 from django.contrib import messages
 from django.db import transaction
-from django.views.decorators.http import require_POST
 
 from .models import (
     Usuario, Rol, Material, StockCamion,
@@ -294,11 +293,14 @@ def _procesar_y_aprobar(request, archivo, usuario_upload):
             if nuevo:
                 creados += 1
 
-        # Descontar stock (ya validado → no fallará)
+        # Descontar stock (puede quedar negativo si no hay registro previo)
         for info in totales.values():
-            stock = StockCamion.objects.get(camion=info['camion'], material=info['material'])
+            stock, _ = StockCamion.objects.get_or_create(
+                camion=info['camion'], material=info['material'],
+                defaults={'cantidad': 0},
+            )
             stock.cantidad -= info['qty']
-            stock.save()
+            stock.save(update_fields=['cantidad'])
 
         upload.estado = 'aprobado'
         upload.save()
