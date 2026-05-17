@@ -1,18 +1,21 @@
-import hashlib
 import datetime
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse
 from django.contrib import messages
 from django.db import transaction
 
 from .models import (
-    Usuario, Rol, Material, StockCamion,
+    Usuario, Rol, Empresa, Material, StockCamion,
     UploadConsumo, Consumo, DetalleConsumo,
     SST, UsuarioCamion,
+)
+from .security import (
+    verificar_clave, hashear_clave, migrar_clave_si_legacy,
+    esta_bloqueado, registrar_intento_fallido, limpiar_intentos, intentos_restantes,
 )
 
 
@@ -40,6 +43,19 @@ def _login_required(view_fn):
     return wrapper
 
 
+def _superadmin_required(view_fn):
+    def wrapper(request, *args, **kwargs):
+        usuario = _usuario_session(request)
+        if not usuario:
+            return redirect('portal_login')
+        if usuario.rol_id != Rol.SUPERADMIN:
+            messages.error(request, 'Acceso restringido al SuperAdmin.')
+            return redirect('portal_consumos')
+        return view_fn(request, *args, **kwargs)
+    wrapper.__name__ = view_fn.__name__
+    return wrapper
+
+
 # ── Vistas ────────────────────────────────────────────────────────────────────
 
 def portal_login(request):
@@ -49,19 +65,41 @@ def portal_login(request):
     if request.method == 'POST':
         email = request.POST.get('email', '').strip().lower()
         clave = request.POST.get('clave', '').strip()
-        clave_hash = hashlib.sha256(clave.encode()).hexdigest()
+
+        if esta_bloqueado(email):
+            messages.error(request, 'Demasiados intentos fallidos. Intenta en 15 minutos.')
+            return render(request, 'portal/login.html')
+
         try:
-            usuario = Usuario.objects.select_related('rol').get(
-                email=email, clave=clave_hash, activo=True
-            )
-            if usuario.rol_id not in ROLES_PERMITIDOS:
-                messages.error(request, 'Tu rol no tiene acceso al portal de consumos.')
-            else:
-                request.session['portal_uid'] = usuario.id_usuario
-                request.session.set_expiry(28800)  # 8 horas
-                return redirect('portal_consumos')
+            usuario = Usuario.objects.select_related('rol').get(email=email, activo=True)
         except Usuario.DoesNotExist:
+            registrar_intento_fallido(email)
             messages.error(request, 'Correo o contraseña incorrectos.')
+            return render(request, 'portal/login.html')
+
+        if not verificar_clave(clave, usuario.clave):
+            restantes = intentos_restantes(email) - 1
+            registrar_intento_fallido(email)
+            msg = 'Correo o contraseña incorrectos.'
+            if 0 <= restantes <= 2:
+                msg += f' Te quedan {restantes} intento(s) antes del bloqueo.'
+            messages.error(request, msg)
+            return render(request, 'portal/login.html')
+
+        if usuario.rol_id not in ROLES_PERMITIDOS:
+            messages.error(request, 'Tu rol no tiene acceso al portal.')
+            return render(request, 'portal/login.html')
+
+        limpiar_intentos(email)
+        migrar_clave_si_legacy(usuario, clave)
+
+        from django.utils import timezone
+        usuario.ultimo_acceso = timezone.now()
+        usuario.save(update_fields=['ultimo_acceso'])
+
+        request.session['portal_uid'] = usuario.id_usuario
+        request.session.set_expiry(28800)
+        return redirect('portal_consumos')
 
     return render(request, 'portal/login.html')
 
@@ -313,3 +351,94 @@ def _procesar_y_aprobar(request, archivo, usuario_upload):
         'errores':  [],
         'upload':   upload,
     }
+
+
+# ── Gestión de usuarios (SuperAdmin) ─────────────────────────────────────────
+
+@_superadmin_required
+def portal_usuarios(request):
+    usuario = _usuario_session(request)
+    empresa_id = request.GET.get('empresa')
+
+    empresas = Empresa.objects.filter(activo=True).order_by('nombre')
+    usuarios_qs = (
+        Usuario.objects
+        .select_related('rol', 'empresa')
+        .order_by('empresa__nombre', 'nombre')
+    )
+    if empresa_id:
+        usuarios_qs = usuarios_qs.filter(empresa_id=empresa_id)
+
+    return render(request, 'portal/usuarios.html', {
+        'usuario':    usuario,
+        'usuarios':   usuarios_qs,
+        'empresas':   empresas,
+        'filtro_emp': empresa_id,
+    })
+
+
+@_superadmin_required
+def portal_crear_usuario(request):
+    usuario = _usuario_session(request)
+    roles   = Rol.objects.all().order_by('id_rol')
+    empresas = Empresa.objects.filter(activo=True).order_by('nombre')
+
+    if request.method == 'POST':
+        nombre   = request.POST.get('nombre', '').strip()
+        email    = request.POST.get('email', '').strip().lower()
+        clave    = request.POST.get('clave', '').strip()
+        rol_id   = request.POST.get('rol_id')
+        emp_id   = request.POST.get('empresa_id') or None
+        telefono = request.POST.get('telefono', '').strip()
+
+        errores = []
+        if not nombre:   errores.append('El nombre es obligatorio.')
+        if not email:    errores.append('El correo es obligatorio.')
+        if not clave:    errores.append('La contraseña es obligatoria.')
+        if not rol_id:   errores.append('Selecciona un rol.')
+        if Usuario.objects.filter(email=email).exists():
+            errores.append(f'El correo {email} ya está registrado.')
+        try:
+            rol_obj = Rol.objects.get(pk=rol_id)
+        except Rol.DoesNotExist:
+            errores.append('Rol inválido.')
+            rol_obj = None
+        if rol_obj and rol_obj.id_rol != Rol.SUPERADMIN and not emp_id:
+            errores.append('Debes asignar una empresa (excepto para SuperAdmin).')
+
+        if errores:
+            for e in errores:
+                messages.error(request, e)
+        else:
+            nuevo = Usuario.objects.create(
+                nombre     = nombre,
+                email      = email,
+                clave      = hashear_clave(clave),
+                rol_id     = int(rol_id),
+                empresa_id = int(emp_id) if emp_id else None,
+                telefono   = telefono,
+                activo     = True,
+            )
+            messages.success(request, f'Usuario "{nuevo.nombre}" creado correctamente.')
+            return redirect('portal_usuarios')
+
+    return render(request, 'portal/crear_usuario.html', {
+        'usuario':  usuario,
+        'roles':    roles,
+        'empresas': empresas,
+    })
+
+
+@_superadmin_required
+def portal_toggle_usuario(request, uid):
+    if request.method != 'POST':
+        return redirect('portal_usuarios')
+    target = get_object_or_404(Usuario, pk=uid)
+    if target.rol_id == Rol.SUPERADMIN:
+        messages.error(request, 'No se puede desactivar al SuperAdmin.')
+        return redirect('portal_usuarios')
+    target.activo = not target.activo
+    target.save(update_fields=['activo'])
+    estado = 'activado' if target.activo else 'desactivado'
+    messages.success(request, f'Usuario "{target.nombre}" {estado}.')
+    return redirect('portal_usuarios')

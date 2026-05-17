@@ -16,14 +16,38 @@
 <body>
 
 {% if usuario %}
-<nav class="navbar navbar-dark" style="background:#1d6a3a">
+<nav class="navbar navbar-expand-lg navbar-dark" style="background:#1d6a3a">
   <div class="container-fluid">
-    <span class="navbar-brand"><i class="bi bi-box-seam me-2"></i>Encossa · Portal Consumos</span>
-    <div class="d-flex align-items-center gap-3">
-      <span class="text-white-50 small">{{ usuario.nombre }}</span>
-      <a href="{% url 'portal_logout' %}" class="btn btn-sm btn-outline-light">
-        <i class="bi bi-box-arrow-right me-1"></i>Salir
-      </a>
+    <a class="navbar-brand" href="{% url 'portal_consumos' %}">
+      <i class="bi bi-box-seam me-2"></i>Encossa · Portal
+    </a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navMenu">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item">
+          <a class="nav-link {% block nav_consumos %}{% endblock %}" href="{% url 'portal_consumos' %}">
+            <i class="bi bi-file-earmark-spreadsheet me-1"></i>Consumos
+          </a>
+        </li>
+        {% if usuario.rol_id == 1 %}
+        <li class="nav-item">
+          <a class="nav-link {% block nav_usuarios %}{% endblock %}" href="{% url 'portal_usuarios' %}">
+            <i class="bi bi-people me-1"></i>Usuarios
+          </a>
+        </li>
+        {% endif %}
+      </ul>
+      <div class="d-flex align-items-center gap-3">
+        <span class="text-white-50 small">
+          <i class="bi bi-person-circle me-1"></i>{{ usuario.nombre }}
+          <span class="badge ms-1" style="background:rgba(255,255,255,.15)">{{ usuario.rol.descripcion }}</span>
+        </span>
+        <a href="{% url 'portal_logout' %}" class="btn btn-sm btn-outline-light">
+          <i class="bi bi-box-arrow-right me-1"></i>Salir
+        </a>
+      </div>
     </div>
   </div>
 </nav>

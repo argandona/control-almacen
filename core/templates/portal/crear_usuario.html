@@ -1,0 +1,122 @@
+{% extends "portal/base.html" %}
+{% block title %}Nuevo Usuario — Portal Encossa{% endblock %}
+{% block nav_usuarios %}active{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7 col-xl-6">
+
+    <div class="d-flex align-items-center gap-2 mb-4">
+      <a href="{% url 'portal_usuarios' %}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i>
+      </a>
+      <div>
+        <h4 class="fw-bold mb-0"><i class="bi bi-person-plus me-2 text-success"></i>Nuevo Usuario</h4>
+        <p class="text-muted small mb-0">Completa los datos para crear la cuenta.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body p-4">
+        <form method="post" novalidate>
+          {% csrf_token %}
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Nombre completo <span class="text-danger">*</span></label>
+            <input type="text" name="nombre" class="form-control"
+                   placeholder="Ej. García López Juan" value="{{ request.POST.nombre }}" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Correo electrónico <span class="text-danger">*</span></label>
+            <input type="email" name="email" class="form-control"
+                   placeholder="usuario@empresa.com" value="{{ request.POST.email }}" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Contraseña <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <input type="password" name="clave" id="clave" class="form-control"
+                     placeholder="Mínimo 8 caracteres" required>
+              <button type="button" class="btn btn-outline-secondary" id="toggleClave" tabindex="-1">
+                <i class="bi bi-eye" id="eyeIcon"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Rol <span class="text-danger">*</span></label>
+            <select name="rol_id" id="rolSelect" class="form-select" required onchange="toggleEmpresa()">
+              <option value="">— Selecciona un rol —</option>
+              {% for r in roles %}
+              <option value="{{ r.id_rol }}"
+                {% if request.POST.rol_id == r.id_rol|stringformat:"s" %}selected{% endif %}>
+                {{ r.descripcion }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3" id="empresaRow">
+            <label class="form-label fw-semibold">Empresa <span class="text-danger">*</span></label>
+            <select name="empresa_id" id="empresaSelect" class="form-select">
+              <option value="">— Selecciona una empresa —</option>
+              {% for e in empresas %}
+              <option value="{{ e.id_empresa }}"
+                {% if request.POST.empresa_id == e.id_empresa|stringformat:"s" %}selected{% endif %}>
+                {{ e.nombre }}
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text">No aplica para el rol SuperAdmin.</div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Teléfono</label>
+            <input type="text" name="telefono" class="form-control"
+                   placeholder="Ej. +51 999 888 777" value="{{ request.POST.telefono }}">
+          </div>
+
+          <div class="d-grid gap-2 d-sm-flex justify-content-sm-end">
+            <a href="{% url 'portal_usuarios' %}" class="btn btn-outline-secondary">Cancelar</a>
+            <button type="submit" class="btn btn-success px-4">
+              <i class="bi bi-check2-circle me-1"></i>Crear usuario
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const SUPERADMIN_ID = '1';
+
+  function toggleEmpresa() {
+    const rol = document.getElementById('rolSelect').value;
+    const row = document.getElementById('empresaRow');
+    const sel = document.getElementById('empresaSelect');
+    const isSA = rol === SUPERADMIN_ID;
+    row.style.opacity = isSA ? '.4' : '1';
+    sel.disabled = isSA;
+    if (isSA) sel.value = '';
+  }
+
+  document.addEventListener('DOMContentLoaded', toggleEmpresa);
+
+  document.getElementById('toggleClave').addEventListener('click', function () {
+    const inp  = document.getElementById('clave');
+    const icon = document.getElementById('eyeIcon');
+    if (inp.type === 'password') {
+      inp.type = 'text';
+      icon.classList.replace('bi-eye', 'bi-eye-slash');
+    } else {
+      inp.type = 'password';
+      icon.classList.replace('bi-eye-slash', 'bi-eye');
+    }
+  });
+</script>
+{% endblock %}

@@ -126,12 +126,16 @@ def _str(val, default=""):
     return str(val).strip() if val is not None else default
 
 def _hash_clave(clave: str) -> str:
-    """SHA256 — igual que authentication.py."""
+    """PBKDF2 seguro. Si ya viene hasheado (pbkdf2_ o sha256 legacy) lo deja igual."""
+    from .security import hashear_clave
     h = str(clave).strip()
-    # Si ya tiene 64 chars hex, asumimos que ya está hasheada
-    if len(h) == 64 and all(c in "0123456789abcdef" for c in h):
+    # Ya hasheado en formato PBKDF2
+    if h.startswith('pbkdf2_') or h.startswith('bcrypt'):
         return h
-    return hashlib.sha256(h.encode()).hexdigest()
+    # Legacy SHA256 (64 hex) — se migra al primer login, no re-hashear
+    if len(h) == 64 and all(c in '0123456789abcdef' for c in h):
+        return h
+    return hashear_clave(h)
 
 
 # ── Empresa ───────────────────────────────────────────────────────────────────

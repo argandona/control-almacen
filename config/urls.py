@@ -8,8 +8,12 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('core.urls')),
     # Portal web para Liquidadores / Encargados de Almacén
-    path('portal/login/',     portal_views.portal_login,     name='portal_login'),
-    path('portal/logout/',    portal_views.portal_logout,    name='portal_logout'),
-    path('portal/',           portal_views.portal_consumos,  name='portal_consumos'),
-    path('portal/plantilla/', portal_views.portal_plantilla, name='portal_plantilla'),
+    path('portal/login/',                      portal_views.portal_login,          name='portal_login'),
+    path('portal/logout/',                     portal_views.portal_logout,         name='portal_logout'),
+    path('portal/',                            portal_views.portal_consumos,       name='portal_consumos'),
+    path('portal/plantilla/',                  portal_views.portal_plantilla,      name='portal_plantilla'),
+    # SuperAdmin — gestión de usuarios
+    path('portal/usuarios/',                   portal_views.portal_usuarios,       name='portal_usuarios'),
+    path('portal/usuarios/nuevo/',             portal_views.portal_crear_usuario,  name='portal_crear_usuario'),
+    path('portal/usuarios/<int:uid>/toggle/',  portal_views.portal_toggle_usuario, name='portal_toggle_usuario'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -2,8 +2,6 @@
 Autenticación JWT personalizada usando la tabla Usuario (no django.auth.User).
 El token guarda: id_usuario, email, rol_id, empresa_id.
 """
-import hashlib
-from datetime import timedelta
 from django.conf import settings
 from rest_framework import serializers, status
 from rest_framework.response import Response
@@ -11,10 +9,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Usuario
-
-
-def _hash(clave: str) -> str:
-    return hashlib.sha256(clave.encode()).hexdigest()
+from .security import verificar_clave, migrar_clave_si_legacy, esta_bloqueado, registrar_intento_fallido, limpiar_intentos, intentos_restantes
 
 
 class CustomRefreshToken(RefreshToken):
@@ -45,12 +40,30 @@ class LoginView(APIView):
         email = serializer.validated_data['email']
         clave = serializer.validated_data['clave']
 
+        if esta_bloqueado(email):
+            return Response(
+                {'detail': 'Demasiados intentos fallidos. Intenta en 15 minutos.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
         try:
-            usuario = Usuario.objects.select_related('rol','empresa').get(
-                email=email, clave=_hash(clave), activo=True
+            usuario = Usuario.objects.select_related('rol', 'empresa').get(
+                email=email, activo=True
             )
         except Usuario.DoesNotExist:
+            registrar_intento_fallido(email)
             return Response({'detail': 'Credenciales inválidas.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if not verificar_clave(clave, usuario.clave):
+            restantes = intentos_restantes(email) - 1
+            registrar_intento_fallido(email)
+            msg = 'Credenciales inválidas.'
+            if restantes <= 2 and restantes >= 0:
+                msg += f' Te quedan {restantes} intento(s) antes del bloqueo.'
+            return Response({'detail': msg}, status=status.HTTP_401_UNAUTHORIZED)
+
+        limpiar_intentos(email)
+        migrar_clave_si_legacy(usuario, clave)
 
         # Actualizar último acceso
         from django.utils import timezone
