@@ -158,8 +158,8 @@ class MaterialViewSet(viewsets.ModelViewSet):
     def resumen_stock(self, request):
         """
         GET /api/materiales/resumen_stock/
-        Devuelve por material: total_pedidos, total_devoluciones, total_consumos, saldo_actual
-        filtrado por empresa del usuario autenticado.
+        Saldo real desde StockCamion (fuente de verdad, se actualiza al cerrar inventario).
+        Los conteos de pedidos/consumos/devoluciones son informativos históricos.
         """
         from django.db.models import Sum, Q, IntegerField
         from django.db.models.functions import Coalesce
@@ -171,12 +171,26 @@ class MaterialViewSet(viewsets.ModelViewSet):
         except (AttributeError, Usuario.DoesNotExist):
             empresa_id = None
 
+        # Saldo real = suma de StockCamion por material (actualizado con inventarios físicos)
+        stock_filter = Q(camion__empresa_id=empresa_id) if empresa_id else Q()
+        stock_map = {
+            row['material_id']: row['total']
+            for row in (StockCamion.objects
+                        .filter(stock_filter)
+                        .values('material_id')
+                        .annotate(total=Sum('cantidad')))
+        }
+
+        if not stock_map:
+            return Response([])
+
+        # Conteos históricos informativos para el modal de detalle
         eq_p = Q(detalles_pedido__pedido__camion__empresa_id=empresa_id) if empresa_id else Q()
         eq_d = Q(detalles_devolucion__devolucion__camion__empresa_id=empresa_id) if empresa_id else Q()
         eq_c = Q(detalles_consumo__consumo__camion__empresa_id=empresa_id) if empresa_id else Q()
 
         out = IntegerField()
-        materiales = Material.objects.annotate(
+        materiales = Material.objects.filter(id_material__in=stock_map.keys()).annotate(
             total_pedidos=Coalesce(
                 Sum('detalles_pedido__cantidad_aprobada',
                     filter=Q(detalles_pedido__pedido__estado='aprobado') & eq_p),
@@ -192,13 +206,11 @@ class MaterialViewSet(viewsets.ModelViewSet):
                     filter=Q(detalles_consumo__consumo__upload__estado='aprobado') & eq_c),
                 Value(0), output_field=out,
             ),
-        ).filter(
-            Q(total_pedidos__gt=0) | Q(total_devoluciones__gt=0) | Q(total_consumos__gt=0)
         ).order_by('descripcion')
 
         data = []
         for m in materiales:
-            saldo = m.total_pedidos - m.total_devoluciones - m.total_consumos
+            saldo = stock_map.get(m.id_material, 0)
             if saldo > 0:
                 data.append({
                     'id_material':        m.id_material,
