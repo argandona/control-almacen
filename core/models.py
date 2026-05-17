@@ -42,6 +42,7 @@ class Usuario(models.Model):
     fecha_creacion = models.DateField(auto_now_add=True)
     ultimo_acceso  = models.DateTimeField(null=True, blank=True)
     telefono       = models.CharField(max_length=20, blank=True)
+    fcm_token      = models.CharField(max_length=500, blank=True, null=True)
 
     def es_superadmin(self): return self.rol_id == Rol.SUPERADMIN
     def es_admin_empresa(self): return self.rol_id == Rol.ADMIN_EMPRESA

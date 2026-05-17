@@ -79,6 +79,15 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return qs_empresa(Usuario.objects.select_related('rol','empresa'), self.request)
 
+    @action(detail=False, methods=['post'])
+    def fcm_token(self, request):
+        """POST /api/usuarios/fcm_token/ — guarda el token FCM del usuario autenticado."""
+        token = request.data.get('token')
+        if not token:
+            return Response({'detail': 'token requerido'}, status=400)
+        Usuario.objects.filter(pk=request.user.id_usuario).update(fcm_token=token)
+        return Response({'status': 'ok'})
+
     @action(detail=False, methods=['get'])
     def me(self, request):
         """Devuelve los datos del usuario autenticado."""
@@ -299,6 +308,22 @@ class PedidoViewSet(viewsets.ModelViewSet):
             return PedidoAprobarSerializer
         return PedidoSerializer
 
+    def perform_create(self, serializer):
+        from .fcm import send_notification
+        pedido = serializer.save()
+        empresa_id = pedido.usuario.empresa_id
+        tokens = list(
+            Usuario.objects.filter(rol_id=Rol.ENCARGADO_ALMACEN, empresa_id=empresa_id, activo=True)
+            .exclude(fcm_token__isnull=True).exclude(fcm_token='')
+            .values_list('fcm_token', flat=True)
+        )
+        send_notification(
+            tokens,
+            title='Nuevo pedido por despachar',
+            body=f'{pedido.usuario.nombre} solicitó materiales para el camión {pedido.camion.placa}.',
+            data={'tipo': 'pedido_nuevo', 'pedido_id': str(pedido.pk)},
+        )
+
     def get_queryset(self):
         qs = Pedido.objects.prefetch_related('detalles__material').select_related('camion','usuario','almacen','usuario_aprueba')
         estado = self.request.query_params.get('estado')
@@ -330,6 +355,12 @@ class PedidoViewSet(viewsets.ModelViewSet):
                 pedido.observacion     = data.get('observacion', pedido.observacion)
                 pedido.fecha_aprobacion = timezone.now().date()
                 pedido.save()
+                from .fcm import send_notification
+                token = pedido.usuario.fcm_token
+                if token:
+                    send_notification([token], title='Pedido rechazado',
+                        body=f'Tu pedido para el camión {pedido.camion.placa} fue rechazado.',
+                        data={'tipo': 'pedido_rechazado', 'pedido_id': str(pedido.pk)})
                 return Response({'detail': 'Pedido rechazado.'})
 
             # Aprobar
@@ -360,6 +391,13 @@ class PedidoViewSet(viewsets.ModelViewSet):
             pedido.fecha_aprobacion = timezone.now().date()
             pedido.observacion      = data.get('observacion', pedido.observacion)
             pedido.save()
+
+        from .fcm import send_notification
+        token = pedido.usuario.fcm_token
+        if token:
+            send_notification([token], title='Pedido despachado',
+                body=f'Tu pedido para el camión {pedido.camion.placa} fue aprobado.',
+                data={'tipo': 'pedido_aprobado', 'pedido_id': str(pedido.pk)})
         return Response(PedidoSerializer(pedido).data)
 
 
@@ -373,6 +411,22 @@ class DevolucionViewSet(viewsets.ModelViewSet):
         if self.action == 'aprobar':
             return DevolucionAprobarSerializer
         return DevolucionSerializer
+
+    def perform_create(self, serializer):
+        from .fcm import send_notification
+        devolucion = serializer.save()
+        empresa_id = devolucion.usuario.empresa_id
+        tokens = list(
+            Usuario.objects.filter(rol_id=Rol.ENCARGADO_ALMACEN, empresa_id=empresa_id, activo=True)
+            .exclude(fcm_token__isnull=True).exclude(fcm_token='')
+            .values_list('fcm_token', flat=True)
+        )
+        send_notification(
+            tokens,
+            title='Nueva devolución por aprobar',
+            body=f'{devolucion.usuario.nombre} devuelve materiales del camión {devolucion.camion.placa}.',
+            data={'tipo': 'devolucion_nueva', 'devolucion_id': str(devolucion.pk)},
+        )
 
     def get_queryset(self):
         qs = Devolucion.objects.prefetch_related('detalles__material').select_related('camion','usuario','almacen_destino','usuario_aprueba')
@@ -402,6 +456,12 @@ class DevolucionViewSet(viewsets.ModelViewSet):
                 devolucion.observacion      = data.get('observacion', devolucion.observacion)
                 devolucion.fecha_aprobacion = timezone.now().date()
                 devolucion.save()
+                from .fcm import send_notification
+                token = devolucion.usuario.fcm_token
+                if token:
+                    send_notification([token], title='Devolución rechazada',
+                        body=f'Tu devolución del camión {devolucion.camion.placa} fue rechazada.',
+                        data={'tipo': 'devolucion_rechazada', 'devolucion_id': str(devolucion.pk)})
                 return Response({'detail': 'Devolución rechazada.'})
 
             almacen_destino = data.get('almacen_destino')
@@ -431,6 +491,12 @@ class DevolucionViewSet(viewsets.ModelViewSet):
             devolucion.fecha_aprobacion = timezone.now().date()
             devolucion.observacion      = data.get('observacion', devolucion.observacion)
             devolucion.save()
+        from .fcm import send_notification
+        token = devolucion.usuario.fcm_token
+        if token:
+            send_notification([token], title='Devolución aprobada',
+                body=f'Tu devolución del camión {devolucion.camion.placa} fue aprobada.',
+                data={'tipo': 'devolucion_aprobada', 'devolucion_id': str(devolucion.pk)})
         return Response(DevolucionSerializer(devolucion).data)
 
 
