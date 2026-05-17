@@ -2,9 +2,11 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.generic import RedirectView
 from core import portal_views
 
 urlpatterns = [
+    path('', RedirectView.as_view(pattern_name='portal_consumos', permanent=False)),
     path('admin/', admin.site.urls),
     path('api/', include('core.urls')),
     # Portal web para Liquidadores / Encargados de Almacén

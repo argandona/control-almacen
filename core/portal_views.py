@@ -59,7 +59,10 @@ def _superadmin_required(view_fn):
 # ── Vistas ────────────────────────────────────────────────────────────────────
 
 def portal_login(request):
-    if _usuario_session(request):
+    usuario_activo = _usuario_session(request)
+    if usuario_activo:
+        if usuario_activo.rol_id == Rol.SUPERADMIN:
+            return redirect('portal_usuarios')
         return redirect('portal_consumos')
 
     if request.method == 'POST':
@@ -99,6 +102,8 @@ def portal_login(request):
 
         request.session['portal_uid'] = usuario.id_usuario
         request.session.set_expiry(28800)
+        if usuario.rol_id == Rol.SUPERADMIN:
+            return redirect('portal_usuarios')
         return redirect('portal_consumos')
 
     return render(request, 'portal/login.html')
