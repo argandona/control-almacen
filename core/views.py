@@ -913,3 +913,35 @@ class InventarioViewSet(viewsets.ModelViewSet):
         enviar_pdf_inventario(inventario, encargado_camion=encargado)
 
         return Response({'detail': 'Inventario cerrado.'})
+
+    @action(detail=True, methods=['get'])
+    def descargar_pdf(self, request, pk=None):
+        """GET /api/inventarios/{id}/descargar_pdf/ — retorna el PDF del acta."""
+        from django.http import HttpResponse
+        from .pdf_inventario import generar_pdf_inventario
+        from datetime import date as _date
+        from django.db.models import Q as _Q
+
+        inventario = (Inventario.objects
+                      .prefetch_related('detalles__material')
+                      .select_related('camion', 'usuario__empresa')
+                      .get(pk=pk))
+
+        encargado = None
+        if inventario.camion_id:
+            hoy = _date.today()
+            asig = UsuarioCamion.objects.filter(
+                camion=inventario.camion, activo=True, fecha_inicio__lte=hoy,
+            ).filter(
+                _Q(fecha_fin__isnull=True) | _Q(fecha_fin__gte=hoy)
+            ).select_related('usuario').first()
+            if asig:
+                encargado = asig.usuario
+
+        pdf_bytes = generar_pdf_inventario(inventario, encargado_camion=encargado)
+        placa = inventario.camion.placa if inventario.camion_id else 'almacen'
+        filename = f'inventario_{placa}_{inventario.mes}_{inventario.anio}.pdf'
+
+        resp = HttpResponse(pdf_bytes, content_type='application/pdf')
+        resp['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return resp
