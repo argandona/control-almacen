@@ -823,6 +823,27 @@ class InventarioViewSet(viewsets.ModelViewSet):
                      .filter(camion=camion, mes=mes, anio=anio, estado='borrador')
                      .first())
         if existente:
+            # Sincronizar con StockCamion actual: agregar materiales nuevos y
+            # actualizar cantidad_teorica de los existentes
+            with transaction.atomic():
+                materiales_actuales = set(
+                    existente.detalles.values_list('material_id', flat=True))
+                for sc in StockCamion.objects.filter(camion=camion, cantidad__gt=0).select_related('material'):
+                    if sc.material_id not in materiales_actuales:
+                        DetalleInventario.objects.create(
+                            inventario=existente,
+                            material=sc.material,
+                            cantidad_teorica=sc.cantidad,
+                            cantidad_fisica=sc.cantidad,
+                            diferencia=0,
+                        )
+                    else:
+                        existente.detalles.filter(material_id=sc.material_id).update(
+                            cantidad_teorica=sc.cantidad)
+            existente.refresh_from_db()
+            existente = (Inventario.objects
+                         .prefetch_related('detalles__material')
+                         .get(pk=existente.pk))
             return Response(InventarioSerializer(existente).data)
 
         with transaction.atomic():
