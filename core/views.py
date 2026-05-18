@@ -423,6 +423,12 @@ class PedidoViewSet(viewsets.ModelViewSet):
         camion = self.request.query_params.get('camion')
         if camion:
             qs = qs.filter(camion_id=camion)
+        try:
+            usr = Usuario.objects.get(pk=self.request.user.id_usuario)
+            if usr.rol_id in (Rol.ENCARGADO, Rol.CAPATAZ):
+                qs = qs.filter(usuario_id=usr.pk)
+        except (AttributeError, Usuario.DoesNotExist):
+            pass
         return qs
 
     @action(detail=True, methods=['post'])
@@ -524,6 +530,12 @@ class DevolucionViewSet(viewsets.ModelViewSet):
         estado = self.request.query_params.get('estado')
         if estado:
             qs = qs.filter(estado=estado)
+        try:
+            usr = Usuario.objects.get(pk=self.request.user.id_usuario)
+            if usr.rol_id in (Rol.ENCARGADO, Rol.CAPATAZ):
+                qs = qs.filter(usuario_id=usr.pk)
+        except (AttributeError, Usuario.DoesNotExist):
+            pass
         return qs
 
     @action(detail=True, methods=['post'])
