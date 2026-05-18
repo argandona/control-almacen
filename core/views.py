@@ -416,7 +416,7 @@ class PedidoViewSet(viewsets.ModelViewSet):
         )
 
     def get_queryset(self):
-        qs = Pedido.objects.prefetch_related('detalles__material').select_related('camion','usuario','almacen','usuario_aprueba')
+        qs = Pedido.objects.prefetch_related('detalles__material').select_related('camion','usuario','almacen','usuario_aprueba').order_by('-fecha')
         estado = self.request.query_params.get('estado')
         if estado:
             qs = qs.filter(estado=estado)
@@ -526,7 +526,7 @@ class DevolucionViewSet(viewsets.ModelViewSet):
         )
 
     def get_queryset(self):
-        qs = Devolucion.objects.prefetch_related('detalles__material').select_related('camion','usuario','almacen_destino','usuario_aprueba')
+        qs = Devolucion.objects.prefetch_related('detalles__material').select_related('camion','usuario','almacen_destino','usuario_aprueba').order_by('-fecha')
         estado = self.request.query_params.get('estado')
         if estado:
             qs = qs.filter(estado=estado)
