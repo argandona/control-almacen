@@ -16,6 +16,7 @@ urlpatterns = [
     path('portal/plantilla/',                  portal_views.portal_plantilla,      name='portal_plantilla'),
     # Enc. Almacén — pedidos, devoluciones, matriz
     path('portal/pedidos/',                    portal_views.portal_pedidos,        name='portal_pedidos'),
+    path('portal/pedidos/excel/',              portal_views.portal_pedidos_excel,  name='portal_pedidos_excel'),
     path('portal/devoluciones/',               portal_views.portal_devoluciones,   name='portal_devoluciones'),
     path('portal/matriz/',                     portal_views.portal_matriz,         name='portal_matriz'),
     # SuperAdmin — gestión de usuarios

@@ -418,6 +418,107 @@ def portal_pedidos(request):
 
 
 @_almacen_required
+def portal_pedidos_excel(request):
+    """Exporta los pedidos filtrados a Excel con una fila por detalle de material."""
+    usuario  = _usuario_session(request)
+    camiones = _camiones_empresa(usuario)
+
+    camion_id  = request.GET.get('camion')
+    estado_fil = request.GET.get('estado', '')
+    desde      = request.GET.get('desde', '')
+    hasta      = request.GET.get('hasta', '')
+
+    qs = (Pedido.objects
+          .filter(camion__in=camiones)
+          .select_related('camion', 'usuario', 'usuario_aprueba')
+          .prefetch_related('detalles__material')
+          .order_by('-fecha'))
+
+    if camion_id:  qs = qs.filter(camion_id=camion_id)
+    if estado_fil: qs = qs.filter(estado=estado_fil)
+    if desde:      qs = qs.filter(fecha__gte=desde)
+    if hasta:      qs = qs.filter(fecha__lte=hasta)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Pedidos'
+
+    # Estilos
+    verde       = PatternFill('solid', fgColor='1D6A3A')
+    hdr_font    = Font(bold=True, color='FFFFFF', size=11)
+    alt_fill    = PatternFill('solid', fgColor='E8F5E9')
+    center      = Alignment(horizontal='center', vertical='center')
+    thin_border = Border(
+        left=Side(style='thin', color='DDDDDD'),
+        right=Side(style='thin', color='DDDDDD'),
+        top=Side(style='thin', color='DDDDDD'),
+        bottom=Side(style='thin', color='DDDDDD'),
+    )
+
+    headers = [
+        '# Pedido', 'Fecha', 'Estado', 'Camión',
+        'Solicitado por', 'Aprobado / Despachado por', 'Fecha aprobación',
+        'Matrícula', 'Material', 'Cant. solicitada', 'Cant. despachada',
+    ]
+    col_widths = [10, 14, 12, 12, 24, 28, 18, 14, 36, 16, 16]
+
+    ws.append(headers)
+    for col_idx, (hdr, w) in enumerate(zip(headers, col_widths), start=1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.font      = hdr_font
+        cell.fill      = verde
+        cell.alignment = center
+        cell.border    = thin_border
+        ws.column_dimensions[cell.column_letter].width = w
+    ws.row_dimensions[1].height = 22
+
+    row_num = 2
+    for pedido in qs:
+        aprobado_por  = pedido.usuario_aprueba.nombre if pedido.usuario_aprueba else '—'
+        fecha_aprob   = pedido.fecha_aprobacion.strftime('%d/%m/%Y') if pedido.fecha_aprobacion else '—'
+        detalles      = list(pedido.detalles.all())
+
+        for det in detalles:
+            fila = [
+                pedido.id_pedido,
+                pedido.fecha.strftime('%d/%m/%Y') if pedido.fecha else '—',
+                pedido.get_estado_display(),
+                pedido.camion.placa,
+                pedido.usuario.nombre,
+                aprobado_por,
+                fecha_aprob,
+                det.material.matricula,
+                det.material.descripcion,
+                det.cantidad_solicitada,
+                det.cantidad_aprobada if det.cantidad_aprobada else 0,
+            ]
+            ws.append(fila)
+            fill = alt_fill if row_num % 2 == 0 else None
+            for col_idx in range(1, len(headers) + 1):
+                cell = ws.cell(row=row_num, column=col_idx)
+                cell.border    = thin_border
+                cell.alignment = Alignment(vertical='center')
+                if fill:
+                    cell.fill = fill
+            row_num += 1
+
+    ws.freeze_panes = 'A2'
+    ws.auto_filter.ref = ws.dimensions
+
+    # Nombre del archivo con filtros aplicados
+    sufijo = f'_{estado_fil}' if estado_fil else ''
+    sufijo += f'_{desde}_{hasta}' if desde or hasta else ''
+    filename = f'pedidos{sufijo}.xlsx'
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
+
+
+@_almacen_required
 def portal_devoluciones(request):
     usuario  = _usuario_session(request)
     camiones = _camiones_empresa(usuario)
