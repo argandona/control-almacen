@@ -15,9 +15,13 @@ urlpatterns = [
     path('portal/',                            portal_views.portal_consumos,       name='portal_consumos'),
     path('portal/plantilla/',                  portal_views.portal_plantilla,      name='portal_plantilla'),
     # Enc. Almacén — pedidos, devoluciones, matriz
-    path('portal/pedidos/',                    portal_views.portal_pedidos,        name='portal_pedidos'),
-    path('portal/pedidos/excel/',              portal_views.portal_pedidos_excel,  name='portal_pedidos_excel'),
-    path('portal/devoluciones/',               portal_views.portal_devoluciones,   name='portal_devoluciones'),
+    path('portal/pedidos/',                             portal_views.portal_pedidos,             name='portal_pedidos'),
+    path('portal/pedidos/excel/',                       portal_views.portal_pedidos_excel,       name='portal_pedidos_excel'),
+    path('portal/pedidos/<int:pedido_id>/aprobar/',     portal_views.portal_aprobar_pedido,      name='portal_aprobar_pedido'),
+    path('portal/pedidos/<int:pedido_id>/rechazar/',    portal_views.portal_rechazar_pedido,     name='portal_rechazar_pedido'),
+    path('portal/devoluciones/',                        portal_views.portal_devoluciones,        name='portal_devoluciones'),
+    path('portal/devoluciones/<int:dev_id>/aprobar/',   portal_views.portal_aprobar_devolucion,  name='portal_aprobar_devolucion'),
+    path('portal/devoluciones/<int:dev_id>/rechazar/',  portal_views.portal_rechazar_devolucion, name='portal_rechazar_devolucion'),
     path('portal/matriz/',                     portal_views.portal_matriz,         name='portal_matriz'),
     # SuperAdmin — gestión de usuarios
     path('portal/usuarios/',                   portal_views.portal_usuarios,       name='portal_usuarios'),

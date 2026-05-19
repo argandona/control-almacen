@@ -1,6 +1,7 @@
 import datetime
 
 import openpyxl
+from django.core.exceptions import ValidationError
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from django.shortcuts import render, redirect, get_object_or_404
@@ -12,6 +13,7 @@ from django.db.models import Sum, Q
 
 from .models import (
     Usuario, Rol, Empresa, Camion, Material, StockCamion,
+    Almacen, StockAlmacen,
     UploadConsumo, Consumo, DetalleConsumo,
     Pedido, DetallePedido,
     Devolucion, DetalleDevolucion,
@@ -406,10 +408,15 @@ def portal_pedidos(request):
     if desde:      qs = qs.filter(fecha__gte=desde)
     if hasta:      qs = qs.filter(fecha__lte=hasta)
 
+    almacenes = Almacen.objects.filter(activo=True).order_by('nombre')
+    if usuario.empresa_id:
+        almacenes = almacenes.filter(empresa_id=usuario.empresa_id)
+
     return render(request, 'portal/pedidos.html', {
         'usuario':    usuario,
         'pedidos':    qs,
         'camiones':   camiones,
+        'almacenes':  almacenes,
         'camion_id':  camion_id or '',
         'estado_fil': estado_fil,
         'desde':      desde,
@@ -539,14 +546,19 @@ def portal_devoluciones(request):
     if desde:      qs = qs.filter(fecha__gte=desde)
     if hasta:      qs = qs.filter(fecha__lte=hasta)
 
+    almacenes = Almacen.objects.filter(activo=True).order_by('nombre')
+    if usuario.empresa_id:
+        almacenes = almacenes.filter(empresa_id=usuario.empresa_id)
+
     return render(request, 'portal/devoluciones.html', {
-        'usuario':     usuario,
+        'usuario':      usuario,
         'devoluciones': qs,
-        'camiones':    camiones,
-        'camion_id':   camion_id or '',
-        'estado_fil':  estado_fil,
-        'desde':       desde,
-        'hasta':       hasta,
+        'camiones':     camiones,
+        'almacenes':    almacenes,
+        'camion_id':    camion_id or '',
+        'estado_fil':   estado_fil,
+        'desde':        desde,
+        'hasta':        hasta,
     })
 
 
@@ -717,6 +729,164 @@ def portal_crear_usuario(request):
         'empresas': empresas,
     })
 
+
+# ── Aprobar / Rechazar Pedidos (portal web) ──────────────────────────────────
+
+@_almacen_required
+def portal_aprobar_pedido(request, pedido_id):
+    if request.method != 'POST':
+        return redirect('portal_pedidos')
+
+    usuario = _usuario_session(request)
+    pedido  = get_object_or_404(Pedido, pk=pedido_id)
+
+    if pedido.estado != 'pendiente':
+        messages.error(request, f'El pedido #{pedido_id} ya fue procesado.')
+        return redirect('portal_pedidos')
+
+    almacen_id  = request.POST.get('almacen_id')
+    observacion = request.POST.get('observacion', '').strip()
+
+    try:
+        almacen = Almacen.objects.get(pk=almacen_id)
+    except (Almacen.DoesNotExist, ValueError, TypeError):
+        messages.error(request, 'Selecciona un almacén válido.')
+        return redirect('portal_pedidos')
+
+    try:
+        with transaction.atomic():
+            for det in pedido.detalles.all():
+                cant = int(request.POST.get(f'cantidad_{det.pk}', 0) or 0)
+                cant = max(0, min(cant, det.cantidad_solicitada))
+                if cant > 0:
+                    try:
+                        stock_alm = StockAlmacen.objects.get(almacen=almacen, material=det.material)
+                    except StockAlmacen.DoesNotExist:
+                        raise ValidationError(f'Sin stock de {det.material} en {almacen}.')
+                    stock_alm.descontar(cant)
+                    stock_cam, _ = StockCamion.objects.get_or_create(
+                        camion=pedido.camion, material=det.material, defaults={'cantidad': 0}
+                    )
+                    stock_cam.agregar(cant)
+                det.cantidad_aprobada = cant
+                det.save()
+
+            pedido.estado           = 'aprobado'
+            pedido.almacen          = almacen
+            pedido.usuario_aprueba  = usuario
+            pedido.fecha_aprobacion = datetime.date.today()
+            pedido.observacion      = observacion
+            pedido.save()
+
+        messages.success(request, f'Pedido #{pedido_id} aprobado y despachado correctamente.')
+    except ValidationError as e:
+        messages.error(request, f'Error al aprobar: {e.message}')
+
+    return redirect('portal_pedidos')
+
+
+@_almacen_required
+def portal_rechazar_pedido(request, pedido_id):
+    if request.method != 'POST':
+        return redirect('portal_pedidos')
+
+    usuario = _usuario_session(request)
+    pedido  = get_object_or_404(Pedido, pk=pedido_id)
+
+    if pedido.estado != 'pendiente':
+        messages.error(request, f'El pedido #{pedido_id} ya fue procesado.')
+        return redirect('portal_pedidos')
+
+    observacion = request.POST.get('observacion', '').strip()
+    pedido.estado           = 'rechazado'
+    pedido.usuario_aprueba  = usuario
+    pedido.fecha_aprobacion = datetime.date.today()
+    pedido.observacion      = observacion
+    pedido.save()
+
+    messages.success(request, f'Pedido #{pedido_id} rechazado.')
+    return redirect('portal_pedidos')
+
+
+# ── Aprobar / Rechazar Devoluciones (portal web) ─────────────────────────────
+
+@_almacen_required
+def portal_aprobar_devolucion(request, dev_id):
+    if request.method != 'POST':
+        return redirect('portal_devoluciones')
+
+    usuario    = _usuario_session(request)
+    devolucion = get_object_or_404(Devolucion, pk=dev_id)
+
+    if devolucion.estado != 'pendiente':
+        messages.error(request, f'La devolución #{dev_id} ya fue procesada.')
+        return redirect('portal_devoluciones')
+
+    almacen_id  = request.POST.get('almacen_id')
+    observacion = request.POST.get('observacion', '').strip()
+
+    try:
+        almacen = Almacen.objects.get(pk=almacen_id)
+    except (Almacen.DoesNotExist, ValueError, TypeError):
+        messages.error(request, 'Selecciona un almacén válido.')
+        return redirect('portal_devoluciones')
+
+    try:
+        with transaction.atomic():
+            for det in devolucion.detalles.all():
+                cant = int(request.POST.get(f'cantidad_{det.pk}', 0) or 0)
+                cant = max(0, min(cant, det.cantidad_solicitada))
+                if cant > 0:
+                    try:
+                        stock_cam = StockCamion.objects.get(camion=devolucion.camion, material=det.material)
+                    except StockCamion.DoesNotExist:
+                        raise ValidationError(f'Sin stock de {det.material} en el camión.')
+                    stock_cam.descontar(cant)
+                    stock_alm, _ = StockAlmacen.objects.get_or_create(
+                        almacen=almacen, material=det.material, defaults={'cantidad': 0}
+                    )
+                    stock_alm.agregar(cant)
+                det.cantidad_aprobada = cant
+                det.save()
+
+            devolucion.estado           = 'aprobado'
+            devolucion.almacen_destino  = almacen
+            devolucion.usuario_aprueba  = usuario
+            devolucion.fecha_aprobacion = datetime.date.today()
+            devolucion.observacion      = observacion
+            devolucion.save()
+
+        messages.success(request, f'Devolución #{dev_id} aprobada correctamente.')
+    except ValidationError as e:
+        messages.error(request, f'Error al aprobar: {e.message}')
+
+    return redirect('portal_devoluciones')
+
+
+@_almacen_required
+def portal_rechazar_devolucion(request, dev_id):
+    if request.method != 'POST':
+        return redirect('portal_devoluciones')
+
+    usuario    = _usuario_session(request)
+    devolucion = get_object_or_404(Devolucion, pk=dev_id)
+
+    if devolucion.estado != 'pendiente':
+        messages.error(request, f'La devolución #{dev_id} ya fue procesada.')
+        return redirect('portal_devoluciones')
+
+    observacion = request.POST.get('observacion', '').strip()
+    devolucion.estado           = 'rechazado'
+    devolucion.usuario_aprueba  = usuario
+    devolucion.fecha_aprobacion = datetime.date.today()
+    devolucion.observacion      = observacion
+    devolucion.save()
+
+    messages.success(request, f'Devolución #{dev_id} rechazada.')
+    return redirect('portal_devoluciones')
+
+
+# ── Gestión de usuarios (SuperAdmin) ─────────────────────────────────────────
 
 @_superadmin_required
 def portal_toggle_usuario(request, uid):

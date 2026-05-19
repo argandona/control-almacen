@@ -107,9 +107,122 @@
             {% endfor %}
           </tbody>
         </table>
+
+        {% if d.estado == 'pendiente' %}
+        <div class="d-flex gap-2 mt-3">
+          <button type="button" class="btn btn-success btn-sm"
+                  data-bs-toggle="modal" data-bs-target="#modalAprobarDev{{ d.id_devolucion }}">
+            <i class="bi bi-check-circle me-1"></i>Aprobar
+          </button>
+          <button type="button" class="btn btn-outline-danger btn-sm"
+                  data-bs-toggle="modal" data-bs-target="#modalRechazarDev{{ d.id_devolucion }}">
+            <i class="bi bi-x-circle me-1"></i>Rechazar
+          </button>
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>
+
+  {# ── Modal Aprobar ── #}
+  {% if d.estado == 'pendiente' %}
+  <div class="modal fade" id="modalAprobarDev{{ d.id_devolucion }}" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <form method="post" action="{% url 'portal_aprobar_devolucion' d.id_devolucion %}">
+          {% csrf_token %}
+          <div class="modal-header bg-success text-white">
+            <h5 class="modal-title"><i class="bi bi-check-circle me-2"></i>Aprobar Devolución #{{ d.id_devolucion }}</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted small mb-3">
+              <i class="bi bi-truck me-1"></i><strong>{{ d.camion.placa }}</strong>
+              &nbsp;·&nbsp;
+              <i class="bi bi-person me-1"></i>{{ d.usuario.nombre }}
+            </p>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Almacén destino</label>
+              <select name="almacen_id" class="form-select" required>
+                {% for a in almacenes %}
+                <option value="{{ a.id_almacen }}">{{ a.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Cantidades a aprobar</label>
+              <table class="table table-sm table-bordered">
+                <thead class="table-light">
+                  <tr>
+                    <th>Material</th>
+                    <th class="text-end">Solicitado</th>
+                    <th class="text-end" style="width:130px">A aprobar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for det in d.detalles.all %}
+                  <tr>
+                    <td>
+                      <span class="fw-semibold small text-secondary">{{ det.material.matricula }}</span>
+                      <span class="small d-block">{{ det.material.descripcion }}</span>
+                    </td>
+                    <td class="text-end align-middle">{{ det.cantidad_solicitada }}</td>
+                    <td>
+                      <input type="number" name="cantidad_{{ det.pk }}"
+                             value="{{ det.cantidad_solicitada }}"
+                             min="0" max="{{ det.cantidad_solicitada }}"
+                             class="form-control form-control-sm text-end" required>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div class="mb-1">
+              <label class="form-label fw-semibold">Observación (opcional)</label>
+              <textarea name="observacion" class="form-control" rows="2"></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-success btn-sm">
+              <i class="bi bi-check-circle me-1"></i>Confirmar Aprobación
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# ── Modal Rechazar ── #}
+  <div class="modal fade" id="modalRechazarDev{{ d.id_devolucion }}" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form method="post" action="{% url 'portal_rechazar_devolucion' d.id_devolucion %}">
+          {% csrf_token %}
+          <div class="modal-header bg-danger text-white">
+            <h5 class="modal-title"><i class="bi bi-x-circle me-2"></i>Rechazar Devolución #{{ d.id_devolucion }}</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p>¿Rechazar la devolución de <strong>{{ d.usuario.nombre }}</strong> ({{ d.camion.placa }})?</p>
+            <div class="mb-1">
+              <label class="form-label fw-semibold">Motivo (opcional)</label>
+              <textarea name="observacion" class="form-control" rows="2"></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-danger btn-sm">
+              <i class="bi bi-x-circle me-1"></i>Confirmar Rechazo
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {% empty %}
   <div class="text-center text-muted py-5">
     <i class="bi bi-inbox fs-2 d-block mb-2"></i>No hay devoluciones con los filtros seleccionados.
