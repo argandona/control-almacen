@@ -3,6 +3,7 @@ from django.db.models import F
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from datetime import date
+from decimal import Decimal
 
 
 class Empresa(models.Model):
@@ -111,15 +112,93 @@ class UsuarioCamion(models.Model):
 
 
 class SST(models.Model):
-    id_sst    = models.AutoField(primary_key=True)
-    empresa   = models.ForeignKey(Empresa, on_delete=models.PROTECT, related_name="ssts")
-    codigo    = models.CharField(max_length=20, blank=True, db_index=True)
-    distrito  = models.CharField(max_length=100)
-    actividad = models.CharField(max_length=200)
+    id_sst        = models.AutoField(primary_key=True)
+    empresa       = models.ForeignKey(Empresa, on_delete=models.PROTECT, related_name="ssts")
+    codigo        = models.CharField(max_length=20, blank=True, db_index=True)
+    distrito      = models.CharField(max_length=100)
+    actividad     = models.CharField(max_length=200)
+    fecha_inicio  = models.DateField(null=True, blank=True)
+    fecha_termino = models.DateField(null=True, blank=True)
+    monto_sst     = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     class Meta:
         db_table = "sst"
     def __str__(self):
         return f"{self.codigo} - {self.distrito}"
+
+
+class Suministro(models.Model):
+    ESTADO_CHOICES = [
+        ("asignado",  "Asignado"),
+        ("ejecutado", "Ejecutado"),
+        ("devuelto",  "Devuelto"),
+    ]
+    id_suministro     = models.AutoField(primary_key=True)
+    numero_suministro = models.CharField(max_length=20, unique=True, db_index=True)
+    medidor           = models.CharField(max_length=20, blank=True)
+    distrito          = models.CharField(max_length=100, blank=True)
+    monto_sum         = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), validators=[MinValueValidator(0)])
+    estado            = models.CharField(max_length=20, choices=ESTADO_CHOICES, default="asignado")
+    fecha_ejecucion   = models.DateField(null=True, blank=True)
+    ejecutado_por     = models.CharField(max_length=150, blank=True)
+    motivo_devolucion = models.TextField(blank=True)
+    observacion       = models.TextField(blank=True)
+    class Meta:
+        db_table = "suministro"
+    def __str__(self):
+        return f"{self.numero_suministro} — {self.get_estado_display()}"
+
+
+class SSTSuministro(models.Model):
+    id_sst_suministro = models.AutoField(primary_key=True)
+    sst        = models.ForeignKey(SST,        on_delete=models.PROTECT, related_name="sst_suministros")
+    suministro = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="sst_suministros")
+    class Meta:
+        db_table = "sst_suministro"
+        unique_together = ("sst", "suministro")
+    def __str__(self):
+        return f"{self.sst} ↔ {self.suministro}"
+
+
+class ManoDeObra(models.Model):
+    id_mano_de_obra = models.AutoField(primary_key=True)
+    partida         = models.CharField(max_length=7, unique=True)
+    descripcion     = models.CharField(max_length=200)
+    precio          = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
+    class Meta:
+        db_table = "mano_de_obra"
+    def __str__(self):
+        return f"{self.partida} — {self.descripcion}"
+
+
+class SSTManoDeObra(models.Model):
+    id_sst_mano_de_obra = models.AutoField(primary_key=True)
+    sst          = models.ForeignKey(SST,        on_delete=models.PROTECT, related_name="sst_mano_de_obra")
+    mano_de_obra = models.ForeignKey(ManoDeObra, on_delete=models.PROTECT, related_name="sst_mano_de_obra")
+    cantidad     = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    class Meta:
+        db_table = "sst_mano_de_obra"
+        unique_together = ("sst", "mano_de_obra")
+    @property
+    def costo_total(self):
+        return self.cantidad * self.mano_de_obra.precio
+    def __str__(self):
+        return f"{self.sst} | {self.mano_de_obra}"
+
+
+class SSTEncargado(models.Model):
+    ROL_CHOICES = [("encargado", "Encargado"), ("capataz", "Capataz")]
+    id_sst_encargado = models.AutoField(primary_key=True)
+    sst     = models.ForeignKey(SST,     on_delete=models.PROTECT, related_name="sst_encargados")
+    usuario = models.ForeignKey(Usuario, on_delete=models.PROTECT, related_name="sst_encargados")
+    rol     = models.CharField(max_length=20, choices=ROL_CHOICES)
+    class Meta:
+        db_table = "sst_encargado"
+        unique_together = ("sst", "usuario")
+    def clean(self):
+        if self.usuario_id and self.usuario.rol_id not in (Rol.ENCARGADO, Rol.CAPATAZ):
+            raise ValidationError("Solo Encargados y Capataces pueden ejecutar SSTs.")
+    def __str__(self):
+        return f"{self.sst} ← {self.usuario} ({self.get_rol_display()})"
 
 
 class Material(models.Model):
