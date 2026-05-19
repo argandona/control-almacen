@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import F
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from datetime import date
@@ -141,10 +142,13 @@ class StockCamion(models.Model):
         db_table = "stock_camion"
         unique_together = ("camion", "material")
     def descontar(self, cantidad):
-        if self.cantidad - cantidad < 0: raise ValidationError(f"Stock insuficiente para {self.material}.")
-        self.cantidad -= cantidad; self.save()
+        updated = StockCamion.objects.filter(pk=self.pk, cantidad__gte=cantidad).update(cantidad=F('cantidad') - cantidad)
+        if not updated:
+            raise ValidationError(f"Stock insuficiente para {self.material}.")
+        self.refresh_from_db()
     def agregar(self, cantidad):
-        self.cantidad += cantidad; self.save()
+        StockCamion.objects.filter(pk=self.pk).update(cantidad=F('cantidad') + cantidad)
+        self.refresh_from_db()
     def __str__(self):
         return f"{self.camion} | {self.material} | {self.cantidad}"
 
@@ -170,10 +174,13 @@ class StockAlmacen(models.Model):
         db_table = "stock_almacen"
         unique_together = ("almacen", "material")
     def descontar(self, cantidad):
-        if self.cantidad - cantidad < 0: raise ValidationError(f"Stock insuficiente en {self.almacen}.")
-        self.cantidad -= cantidad; self.save()
+        updated = StockAlmacen.objects.filter(pk=self.pk, cantidad__gte=cantidad).update(cantidad=F('cantidad') - cantidad)
+        if not updated:
+            raise ValidationError(f"Stock insuficiente en {self.almacen}.")
+        self.refresh_from_db()
     def agregar(self, cantidad):
-        self.cantidad += cantidad; self.save()
+        StockAlmacen.objects.filter(pk=self.pk).update(cantidad=F('cantidad') + cantidad)
+        self.refresh_from_db()
     def __str__(self):
         return f"{self.almacen} | {self.material} | {self.cantidad}"
 
