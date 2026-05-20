@@ -85,7 +85,8 @@ class UsuarioCamionSerializer(serializers.ModelSerializer):
 
 # ── SST ─────────────────────────────────────────
 class SSTSerializer(serializers.ModelSerializer):
-    empresa_nombre = serializers.CharField(source='empresa.nombre', read_only=True)
+    empresa_nombre   = serializers.CharField(source='empresa.nombre',   read_only=True)
+    actividad_nombre = serializers.CharField(source='actividad.nombre', read_only=True, default='', allow_null=True)
     class Meta:
         model  = SST
         fields = '__all__'
