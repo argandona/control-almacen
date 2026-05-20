@@ -122,6 +122,7 @@ class Actividad(models.Model):
 
 class SST(models.Model):
     id_sst        = models.AutoField(primary_key=True)
+    sst           = models.CharField(max_length=7, blank=True)
     codigo        = models.CharField(max_length=20, blank=True, db_index=True)
     empresa       = models.ForeignKey(Empresa,   on_delete=models.PROTECT, related_name="ssts")
     distrito      = models.CharField(max_length=100)
