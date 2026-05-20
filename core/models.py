@@ -192,7 +192,6 @@ class ManoDeObra(models.Model):
 class Material(models.Model):
     id_material = models.AutoField(primary_key=True)
     matricula   = models.CharField(max_length=50, unique=True)
-    marca = models.CharField(max_length=200)
     descripcion = models.CharField(max_length=200)
     precio      = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
     class Meta:
