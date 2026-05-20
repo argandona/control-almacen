@@ -404,7 +404,7 @@ class ConsumoSerializer(serializers.ModelSerializer):
 class UploadConsumoSerializer(serializers.ModelSerializer):
     consumos       = ConsumoSerializer(many=True, read_only=True)
     usuario_nombre = serializers.CharField(source='usuario.nombre', read_only=True)
-    sst_actividad  = serializers.CharField(source='sst.actividad',  read_only=True)
+    sst_actividad  = serializers.CharField(source='sst.actividad.nombre', read_only=True, default='', allow_null=True)
     class Meta:
         model  = UploadConsumo
         fields = '__all__'

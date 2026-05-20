@@ -1,6 +1,6 @@
 import hashlib
 from django.core.management.base import BaseCommand
-from core.models import Rol, Usuario, Empresa, Almacen, Camion, Material, Proveedor, SST
+from core.models import Rol, Usuario, Empresa, Almacen, Camion, Material, Proveedor, SST, Actividad
 
 def h(clave): return hashlib.sha256(clave.encode()).hexdigest()
 
@@ -45,6 +45,7 @@ class Command(BaseCommand):
             StockAlmacen.objects.get_or_create(almacen=almacen, material=mat, defaults={'cantidad': 100})
 
         Proveedor.objects.get_or_create(ruc='20456789012', defaults={'nombre': 'Tecsur SA', 'activo': True})
-        SST.objects.get_or_create(empresa=empresa, distrito='Miraflores', defaults={'codigo': '3914707', 'actividad': 'Instalacion electrica'})
+        actividad, _ = Actividad.objects.get_or_create(nombre='Instalacion electrica')
+        SST.objects.get_or_create(empresa=empresa, distrito='Miraflores', defaults={'codigo': '3914707', 'actividad': actividad})
 
         self.stdout.write(self.style.SUCCESS('Seed completado!'))

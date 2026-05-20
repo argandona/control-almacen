@@ -18,7 +18,10 @@ from .models import (
     Pedido, DetallePedido, Devolucion, DetalleDevolucion,
     UploadConsumo, Consumo, DetalleConsumo,
     Inventario, DetalleInventario,
-    Suministro, SSTSuministro, ManoDeObra, SuministroManoDeObra, SSTEncargado,
+    Suministro, SSTSuministro, SuministroTipoTrabajo,
+    ManoDeObra, TipoTrabajo, TipoTrabajoPartida,
+    SSTEncargado, Actividad,
+    LiquidacionSuministro, TipoTrabajoEjecutado, PartidaEjecutada,
 )
 
 
@@ -263,12 +266,15 @@ class SSTAdmin(ExcelImportMixin, admin.ModelAdmin):
 
     def import_row(self, data):
         empresa = Empresa.objects.get(nombre__icontains=_str(data["empresa"]))
+        actividad = None
+        if _str(data.get("actividad")):
+            actividad, _ = Actividad.objects.get_or_create(nombre=_str(data["actividad"]))
         SST.objects.update_or_create(
             codigo=_str(data["codigo"]),
             empresa=empresa,
             defaults={
                 "distrito":      _str(data["distrito"]),
-                "actividad":     _str(data["actividad"]),
+                "actividad":     actividad,
                 "fecha_inicio":  data.get("fecha_inicio") or None,
                 "fecha_termino": data.get("fecha_termino") or None,
                 "monto_sst":     data.get("monto_sst") or 0,
@@ -277,14 +283,14 @@ class SSTAdmin(ExcelImportMixin, admin.ModelAdmin):
 
 
 # ── Suministro ────────────────────────────────────────────────────────────────
-class SuministroManoDeObraInline(admin.TabularInline):
-    model  = SuministroManoDeObra
+class SuministroTipoTrabajoInline(admin.TabularInline):
+    model  = SuministroTipoTrabajo
     extra  = 0
-    fields = ["mano_de_obra", "cantidad"]
+    fields = ["tipo_trabajo"]
 
 @admin.register(Suministro)
 class SuministroAdmin(ExcelImportMixin, admin.ModelAdmin):
-    inlines = [SuministroManoDeObraInline]
+    inlines = [SuministroTipoTrabajoInline]
     list_display  = ["numero_suministro", "medidor", "distrito", "estado", "monto_sum", "fecha_ejecucion"]
     list_filter   = ["estado"]
     search_fields = ["numero_suministro", "medidor"]
@@ -515,3 +521,43 @@ class UploadConsumoAdmin(admin.ModelAdmin):
 class InventarioAdmin(admin.ModelAdmin):
     list_display = ["id_inventario", "camion", "almacen", "mes", "anio", "estado"]
     list_filter  = ["estado"]
+
+
+# ── Actividad ─────────────────────────────────────────────────────────────────
+@admin.register(Actividad)
+class ActividadAdmin(admin.ModelAdmin):
+    list_display  = ["nombre"]
+    search_fields = ["nombre"]
+
+
+# ── TipoTrabajo ───────────────────────────────────────────────────────────────
+class TipoTrabajoPartidaInline(admin.TabularInline):
+    model  = TipoTrabajoPartida
+    extra  = 0
+    fields = ["mano_de_obra"]
+
+@admin.register(TipoTrabajo)
+class TipoTrabajoAdmin(admin.ModelAdmin):
+    list_display  = ["nombre", "actividad"]
+    list_filter   = ["actividad"]
+    search_fields = ["nombre"]
+    inlines       = [TipoTrabajoPartidaInline]
+
+
+# ── LiquidacionSuministro ─────────────────────────────────────────────────────
+class PartidaEjecutadaInline(admin.TabularInline):
+    model  = PartidaEjecutada
+    extra  = 0
+    fields = ["mano_de_obra", "cantidad"]
+
+class TipoTrabajoEjecutadoInline(admin.TabularInline):
+    model  = TipoTrabajoEjecutado
+    extra  = 0
+    fields = ["tipo_trabajo"]
+
+@admin.register(LiquidacionSuministro)
+class LiquidacionSuministroAdmin(admin.ModelAdmin):
+    list_display  = ["id_liquidacion", "suministro", "usuario", "fecha"]
+    list_filter   = ["fecha"]
+    search_fields = ["suministro__numero_suministro", "usuario__nombre"]
+    inlines       = [TipoTrabajoEjecutadoInline]
