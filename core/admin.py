@@ -18,6 +18,7 @@ from .models import (
     Pedido, DetallePedido, Devolucion, DetalleDevolucion,
     UploadConsumo, Consumo, DetalleConsumo,
     Inventario, DetalleInventario,
+    Suministro, SSTSuministro, ManoDeObra, SSTManoDeObra, SSTEncargado,
 )
 
 
@@ -233,15 +234,36 @@ class UsuarioCamionAdmin(admin.ModelAdmin):
 
 
 # ── SST ───────────────────────────────────────────────────────────────────────
+class SSTSuministroInline(admin.TabularInline):
+    model  = SSTSuministro
+    extra  = 0
+    fields = ["suministro", "asignado_a"]
+    autocomplete_fields = ["suministro"]
+
+class SSTManoDeObraInline(admin.TabularInline):
+    model  = SSTManoDeObra
+    extra  = 0
+    fields = ["mano_de_obra", "cantidad"]
+
+class SSTEncargadoInline(admin.TabularInline):
+    model  = SSTEncargado
+    extra  = 0
+    fields = ["usuario", "rol"]
+
 @admin.register(SST)
 class SSTAdmin(ExcelImportMixin, admin.ModelAdmin):
-    list_display  = ["codigo", "distrito", "actividad", "empresa"]
+    list_display  = ["codigo", "distrito", "actividad", "empresa", "fecha_inicio", "fecha_termino", "monto_sst"]
     search_fields = ["codigo", "distrito"]
+    list_filter   = ["empresa"]
+    inlines       = [SSTEncargadoInline, SSTSuministroInline, SSTManoDeObraInline]
     excel_fields  = [
-        ("empresa",   "Empresa (nombre)"),
-        ("codigo",    "Código SST"),
-        ("distrito",  "Distrito"),
-        ("actividad", "Actividad"),
+        ("empresa",       "Empresa (nombre)"),
+        ("codigo",        "Código SST"),
+        ("distrito",      "Distrito"),
+        ("actividad",     "Actividad"),
+        ("fecha_inicio",  "Fecha Inicio"),
+        ("fecha_termino", "Fecha Término"),
+        ("monto_sst",     "Monto SST"),
     ]
 
     def import_row(self, data):
@@ -250,8 +272,60 @@ class SSTAdmin(ExcelImportMixin, admin.ModelAdmin):
             codigo=_str(data["codigo"]),
             empresa=empresa,
             defaults={
-                "distrito":  _str(data["distrito"]),
-                "actividad": _str(data["actividad"]),
+                "distrito":      _str(data["distrito"]),
+                "actividad":     _str(data["actividad"]),
+                "fecha_inicio":  data.get("fecha_inicio") or None,
+                "fecha_termino": data.get("fecha_termino") or None,
+                "monto_sst":     data.get("monto_sst") or 0,
+            },
+        )
+
+
+# ── Suministro ────────────────────────────────────────────────────────────────
+@admin.register(Suministro)
+class SuministroAdmin(ExcelImportMixin, admin.ModelAdmin):
+    list_display  = ["numero_suministro", "medidor", "distrito", "estado", "monto_sum", "fecha_ejecucion"]
+    list_filter   = ["estado"]
+    search_fields = ["numero_suministro", "medidor"]
+    excel_fields  = [
+        ("numero_suministro", "N° Suministro"),
+        ("medidor",           "Medidor"),
+        ("distrito",          "Distrito"),
+        ("monto_sum",         "Monto (S/)"),
+        ("estado",            "Estado"),
+        ("ejecutado_por",     "Ejecutado Por"),
+    ]
+
+    def import_row(self, data):
+        Suministro.objects.update_or_create(
+            numero_suministro=_str(data["numero_suministro"]),
+            defaults={
+                "medidor":      _str(data.get("medidor")),
+                "distrito":     _str(data.get("distrito")),
+                "monto_sum":    data.get("monto_sum") or 0,
+                "estado":       _str(data.get("estado")) or "asignado",
+                "ejecutado_por": _str(data.get("ejecutado_por")),
+            },
+        )
+
+
+# ── ManoDeObra ────────────────────────────────────────────────────────────────
+@admin.register(ManoDeObra)
+class ManoDeObraAdmin(ExcelImportMixin, admin.ModelAdmin):
+    list_display  = ["partida", "descripcion", "precio"]
+    search_fields = ["partida", "descripcion"]
+    excel_fields  = [
+        ("partida",     "Partida"),
+        ("descripcion", "Descripción"),
+        ("precio",      "Precio"),
+    ]
+
+    def import_row(self, data):
+        ManoDeObra.objects.update_or_create(
+            partida=_str(data["partida"]),
+            defaults={
+                "descripcion": _str(data["descripcion"]),
+                "precio":      data["precio"],
             },
         )
 
