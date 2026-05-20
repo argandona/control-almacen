@@ -133,7 +133,7 @@ class SST(models.Model):
     class Meta:
         db_table = "sst"
     def __str__(self):
-        return f"{self.distrito} - {self.actividad}"
+        return self.sst or self.codigo or f"SST #{self.id_sst}"
 
 
 class SSTEncargado(models.Model):
