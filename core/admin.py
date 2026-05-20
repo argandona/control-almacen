@@ -303,10 +303,9 @@ class SuministroTipoTrabajoInline(admin.TabularInline):
 
 @admin.register(SuministroTipoTrabajo)
 class SuministroTipoTrabajoAdmin(admin.ModelAdmin):
-    list_display  = ["suministro", "tipo_trabajo"]
-    list_filter   = ["tipo_trabajo__actividad"]
-    search_fields = ["suministro__numero_suministro", "tipo_trabajo__nombre"]
-    autocomplete_fields = ["suministro"]
+    list_display        = ["suministro", "tipo_trabajo"]
+    search_fields       = ["suministro__numero_suministro", "tipo_trabajo__nombre"]
+    list_select_related = True
 
 @admin.register(Suministro)
 class SuministroAdmin(ExcelImportMixin, admin.ModelAdmin):
