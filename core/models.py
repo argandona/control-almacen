@@ -152,6 +152,7 @@ class SSTSuministro(models.Model):
     id_sst_suministro = models.AutoField(primary_key=True)
     sst        = models.ForeignKey(SST,        on_delete=models.PROTECT, related_name="sst_suministros")
     suministro = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="sst_suministros")
+    asignado_a = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name="suministros_asignados")
     class Meta:
         db_table = "sst_suministro"
         unique_together = ("sst", "suministro")
@@ -197,6 +198,9 @@ class SSTEncargado(models.Model):
     def clean(self):
         if self.usuario_id and self.usuario.rol_id not in (Rol.ENCARGADO, Rol.CAPATAZ):
             raise ValidationError("Solo Encargados y Capataces pueden ejecutar SSTs.")
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.sst.sst_suministros.filter(asignado_a__isnull=True).update(asignado_a=self.usuario)
     def __str__(self):
         return f"{self.sst} ← {self.usuario} ({self.get_rol_display()})"
 
