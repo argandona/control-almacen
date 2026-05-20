@@ -540,6 +540,17 @@ class SuministroTipoTrabajo(models.Model):
         unique_together = (("suministro", "tipo_trabajo"),)
 
 
+class TipoTrabajoManoDeObra(models.Model):
+    id_tipo_trabajo_mano_de_obra = models.AutoField(primary_key=True)
+    tipo_trabajo = models.ForeignKey(TipoTrabajo, on_delete=models.PROTECT, related_name="partidas")
+    mano_de_obra = models.ForeignKey(ManoDeObra,  on_delete=models.PROTECT, related_name="tipos_trabajo")
+    class Meta:
+        db_table = "tipo_trabajo_mano_de_obra"
+        unique_together = (("tipo_trabajo", "mano_de_obra"),)
+    def __str__(self):
+        return f"{self.tipo_trabajo} – {self.mano_de_obra}"
+
+
 class SuministroManoDeObra(models.Model):
     id_suministro_mano_de_obra = models.AutoField(primary_key=True)
     suministro   = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="mano_de_obra")

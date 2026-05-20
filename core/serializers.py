@@ -11,7 +11,7 @@ from .models import (
     UploadConsumo, Consumo, DetalleConsumo,
     Inventario, DetalleInventario,
     Suministro, ManoDeObra, TipoTrabajo, SuministroTipoTrabajo,
-    SuministroManoDeObra, Recupero, SuministroRecupero,
+    SuministroManoDeObra, TipoTrabajoManoDeObra, Recupero, SuministroRecupero,
     LiquidacionSuministro, LiquidacionPartida,
 )
 
@@ -462,10 +462,23 @@ class ManoDeObraSerializer(serializers.ModelSerializer):
 
 
 # ── TipoTrabajo ─────────────────────────────────────────────────────────────
+class TipoTrabajoPartidaSerializer(serializers.ModelSerializer):
+    id_mano_de_obra = serializers.IntegerField(source='mano_de_obra.id_mano_de_obra', read_only=True)
+    partida         = serializers.CharField(source='mano_de_obra.partida',            read_only=True)
+    descripcion     = serializers.CharField(source='mano_de_obra.descripcion',        read_only=True)
+    precio          = serializers.DecimalField(source='mano_de_obra.precio', max_digits=12, decimal_places=2, read_only=True)
+
+    class Meta:
+        model  = TipoTrabajoManoDeObra
+        fields = ['id_mano_de_obra', 'partida', 'descripcion', 'precio']
+
+
 class TipoTrabajoSerializer(serializers.ModelSerializer):
+    partidas = TipoTrabajoPartidaSerializer(many=True, read_only=True)
+
     class Meta:
         model  = TipoTrabajo
-        fields = '__all__'
+        fields = ['id_tipo_trabajo', 'nombre', 'partidas']
 
 
 # ── SuministroManoDeObra ─────────────────────────────────────────────────────

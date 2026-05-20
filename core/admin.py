@@ -19,7 +19,7 @@ from .models import (
     UploadConsumo, Consumo, DetalleConsumo,
     Inventario, DetalleInventario,
     Suministro, SSTSuministro, SuministroTipoTrabajo,
-    ManoDeObra, TipoTrabajo, SuministroManoDeObra,
+    ManoDeObra, TipoTrabajo, SuministroManoDeObra, TipoTrabajoManoDeObra,
     SSTEncargado, Actividad,
     Recupero, SuministroRecupero,
 )
@@ -565,8 +565,16 @@ class ActividadAdmin(admin.ModelAdmin):
 
 
 # ── TipoTrabajo ───────────────────────────────────────────────────────────────
+class TipoTrabajoManoDeObraInline(admin.TabularInline):
+    model  = TipoTrabajoManoDeObra
+    extra  = 1
+    fields = ["mano_de_obra"]
+    autocomplete_fields = ["mano_de_obra"]
+
+
 @admin.register(TipoTrabajo)
 class TipoTrabajoAdmin(admin.ModelAdmin):
+    inlines       = [TipoTrabajoManoDeObraInline]
     list_display  = ["nombre"]
     search_fields = ["nombre"]
 

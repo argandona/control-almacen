@@ -15,7 +15,7 @@ from .models import (
     UploadConsumo, Consumo, DetalleConsumo,
     Inventario, DetalleInventario,
     SSTEncargado, SSTSuministro, Suministro, TipoTrabajo, SuministroTipoTrabajo,
-    SuministroManoDeObra, Recupero, SuministroRecupero,
+    SuministroManoDeObra, TipoTrabajoManoDeObra, Recupero, SuministroRecupero,
     LiquidacionSuministro, LiquidacionPartida,
 )
 from .serializers import (
@@ -1032,10 +1032,8 @@ class SuministroViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['get'])
     def tipos_trabajo(self, request, pk=None):
-        """GET /api/suministros/<id>/tipos_trabajo/ — tipos de trabajo del suministro."""
-        suministro = self.get_object()
-        tipo_ids = SuministroTipoTrabajo.objects.filter(suministro=suministro).values_list('tipo_trabajo_id', flat=True)
-        tipos = TipoTrabajo.objects.filter(id_tipo_trabajo__in=tipo_ids)
+        """GET /api/suministros/<id>/tipos_trabajo/ — todos los tipos con sus partidas."""
+        tipos = TipoTrabajo.objects.prefetch_related('partidas__mano_de_obra').order_by('nombre')
         return Response(TipoTrabajoSerializer(tipos, many=True).data)
 
     @action(detail=True, methods=['get'])
