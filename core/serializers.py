@@ -10,6 +10,8 @@ from .models import (
     Devolucion, DetalleDevolucion,
     UploadConsumo, Consumo, DetalleConsumo,
     Inventario, DetalleInventario,
+    Suministro, ManoDeObra, TipoTrabajo, SuministroTipoTrabajo,
+    LiquidacionSuministro, TipoTrabajoEjecutado, PartidaEjecutada,
 )
 
 
@@ -442,3 +444,93 @@ class InventarioCreateSerializer(serializers.ModelSerializer):
             for d in detalles_data:
                 DetalleInventario.objects.create(inventario=inventario, **d)
         return inventario
+
+
+# ── Suministro ──────────────────────────────────────────────────────────────
+class SuministroSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = Suministro
+        fields = '__all__'
+
+
+# ── ManoDeObra ──────────────────────────────────────────────────────────────
+class ManoDeObraSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = ManoDeObra
+        fields = '__all__'
+
+
+# ── TipoTrabajo con partidas ────────────────────────────────────────────────
+class TipoTrabajoSerializer(serializers.ModelSerializer):
+    actividad_nombre = serializers.CharField(source='actividad.nombre', read_only=True)
+    partidas         = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = TipoTrabajo
+        fields = ['id_tipo_trabajo', 'nombre', 'actividad', 'actividad_nombre', 'partidas']
+
+    def get_partidas(self, obj):
+        return [
+            {
+                'id_mano_de_obra': p.mano_de_obra.id_mano_de_obra,
+                'partida':         p.mano_de_obra.partida,
+                'descripcion':     p.mano_de_obra.descripcion,
+                'precio':          str(p.mano_de_obra.precio),
+            }
+            for p in obj.partidas.select_related('mano_de_obra').all()
+        ]
+
+
+# ── Liquidacion Suministro (lectura) ────────────────────────────────────────
+class PartidaEjecutadaSerializer(serializers.ModelSerializer):
+    partida     = serializers.CharField(source='mano_de_obra.partida',     read_only=True)
+    descripcion = serializers.CharField(source='mano_de_obra.descripcion', read_only=True)
+    class Meta:
+        model  = PartidaEjecutada
+        fields = ['id_partida_ejecutada', 'mano_de_obra', 'partida', 'descripcion', 'cantidad']
+
+class TipoTrabajoEjecutadoSerializer(serializers.ModelSerializer):
+    tipo_trabajo_nombre = serializers.CharField(source='tipo_trabajo.nombre', read_only=True)
+    partidas            = PartidaEjecutadaSerializer(many=True, read_only=True)
+    class Meta:
+        model  = TipoTrabajoEjecutado
+        fields = ['id_tipo_trabajo_ejecutado', 'tipo_trabajo', 'tipo_trabajo_nombre', 'partidas']
+
+class LiquidacionSuministroSerializer(serializers.ModelSerializer):
+    numero_suministro = serializers.CharField(source='suministro.numero_suministro', read_only=True)
+    usuario_nombre    = serializers.CharField(source='usuario.nombre', read_only=True)
+    tipos_ejecutados  = TipoTrabajoEjecutadoSerializer(many=True, read_only=True)
+    class Meta:
+        model  = LiquidacionSuministro
+        fields = [
+            'id_liquidacion', 'suministro', 'numero_suministro',
+            'usuario', 'usuario_nombre', 'fecha', 'observacion', 'tipos_ejecutados',
+        ]
+
+
+# ── Liquidacion Suministro (escritura) ──────────────────────────────────────
+class PartidaEjecutadaCreateSerializer(serializers.Serializer):
+    mano_de_obra = serializers.PrimaryKeyRelatedField(queryset=ManoDeObra.objects.all())
+    cantidad     = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+class TipoTrabajoEjecutadoCreateSerializer(serializers.Serializer):
+    tipo_trabajo = serializers.PrimaryKeyRelatedField(queryset=TipoTrabajo.objects.all())
+    partidas     = PartidaEjecutadaCreateSerializer(many=True)
+
+class LiquidacionSuministroCreateSerializer(serializers.Serializer):
+    suministro       = serializers.PrimaryKeyRelatedField(queryset=Suministro.objects.all())
+    usuario          = serializers.PrimaryKeyRelatedField(queryset=Usuario.objects.all())
+    observacion      = serializers.CharField(required=False, allow_blank=True, default='')
+    tipos_ejecutados = TipoTrabajoEjecutadoCreateSerializer(many=True)
+
+    def create(self, validated_data):
+        from django.db import transaction
+        tipos_data = validated_data.pop('tipos_ejecutados')
+        with transaction.atomic():
+            liq = LiquidacionSuministro.objects.create(**validated_data)
+            for tipo_data in tipos_data:
+                partidas_data = tipo_data.pop('partidas')
+                ejecutado = TipoTrabajoEjecutado.objects.create(liquidacion=liq, **tipo_data)
+                for p_data in partidas_data:
+                    PartidaEjecutada.objects.create(tipo_trabajo_ejecutado=ejecutado, **p_data)
+        return liq

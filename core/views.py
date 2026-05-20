@@ -14,6 +14,8 @@ from .models import (
     Pedido, DetallePedido, Devolucion, DetalleDevolucion,
     UploadConsumo, Consumo, DetalleConsumo,
     Inventario, DetalleInventario,
+    SSTEncargado, SSTSuministro, Suministro, TipoTrabajo, SuministroTipoTrabajo,
+    LiquidacionSuministro, TipoTrabajoEjecutado, PartidaEjecutada,
 )
 from .serializers import (
     EmpresaSerializer, RolSerializer,
@@ -29,6 +31,8 @@ from .serializers import (
     DevolucionSerializer, DevolucionCreateSerializer, DevolucionAprobarSerializer,
     UploadConsumoSerializer,
     InventarioSerializer, InventarioCreateSerializer,
+    SuministroSerializer, TipoTrabajoSerializer,
+    LiquidacionSuministroSerializer, LiquidacionSuministroCreateSerializer,
 )
 
 
@@ -138,7 +142,38 @@ class SSTViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return qs_empresa(SST.objects.select_related('empresa'), self.request)
+        return qs_empresa(SST.objects.select_related('empresa', 'actividad'), self.request)
+
+    @action(detail=False, methods=['get'])
+    def mis_sst(self, request):
+        """GET /api/ssts/mis_sst/?usuario=<id> — SSTs donde el usuario es encargado."""
+        usuario_id = request.query_params.get('usuario')
+        if not usuario_id:
+            return Response({'detail': 'Parámetro usuario requerido.'}, status=400)
+        sst_ids = SSTEncargado.objects.filter(usuario_id=usuario_id).values_list('sst_id', flat=True)
+        ssts = SST.objects.filter(id_sst__in=sst_ids).select_related('empresa', 'actividad')
+        return Response(SSTSerializer(ssts, many=True).data)
+
+    @action(detail=True, methods=['get'])
+    def suministros(self, request, pk=None):
+        """GET /api/ssts/<id>/suministros/ — suministros asignados a este SST."""
+        sst = self.get_object()
+        items = (SSTSuministro.objects
+                 .filter(sst=sst)
+                 .select_related('suministro'))
+        data = [
+            {
+                'id_sst_suministro': ss.id_sst_suministro,
+                'id_suministro':     ss.suministro.id_suministro,
+                'numero_suministro': ss.suministro.numero_suministro,
+                'medidor':           ss.suministro.medidor,
+                'distrito':          ss.suministro.distrito,
+                'monto_sum':         str(ss.suministro.monto_sum),
+                'estado':            ss.suministro.estado,
+            }
+            for ss in items
+        ]
+        return Response(data)
 
 
 # ── Material ─────────────────────────────────────────────────────────────────
@@ -978,3 +1013,55 @@ class InventarioViewSet(viewsets.ModelViewSet):
         resp = HttpResponse(pdf_bytes, content_type='application/pdf')
         resp['Content-Disposition'] = f'attachment; filename="{filename}"'
         return resp
+
+
+# ── Suministro ────────────────────────────────────────────────────────────────
+class SuministroViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class   = SuministroSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    queryset           = Suministro.objects.all()
+
+    @action(detail=True, methods=['get'])
+    def tipos_trabajo(self, request, pk=None):
+        """GET /api/suministros/<id>/tipos_trabajo/ — tipos de trabajo con sus partidas."""
+        suministro = self.get_object()
+        tipo_ids = (SuministroTipoTrabajo.objects
+                    .filter(suministro=suministro)
+                    .values_list('tipo_trabajo_id', flat=True))
+        tipos = (TipoTrabajo.objects
+                 .filter(id_tipo_trabajo__in=tipo_ids)
+                 .select_related('actividad')
+                 .prefetch_related('partidas__mano_de_obra'))
+        return Response(TipoTrabajoSerializer(tipos, many=True).data)
+
+
+# ── Liquidacion Suministro ────────────────────────────────────────────────────
+class LiquidacionViewSet(viewsets.ModelViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return LiquidacionSuministroCreateSerializer
+        return LiquidacionSuministroSerializer
+
+    def get_queryset(self):
+        qs = (LiquidacionSuministro.objects
+              .select_related('suministro', 'usuario')
+              .prefetch_related(
+                  'tipos_ejecutados__tipo_trabajo',
+                  'tipos_ejecutados__partidas__mano_de_obra',
+              )
+              .order_by('-fecha'))
+        suministro = self.request.query_params.get('suministro')
+        if suministro:
+            qs = qs.filter(suministro_id=suministro)
+        usuario = self.request.query_params.get('usuario')
+        if usuario:
+            qs = qs.filter(usuario_id=usuario)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        serializer = LiquidacionSuministroCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        liq = serializer.save()
+        return Response(LiquidacionSuministroSerializer(liq).data, status=201)
