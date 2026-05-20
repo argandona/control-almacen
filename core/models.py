@@ -551,6 +551,29 @@ class SuministroManoDeObra(models.Model):
         return f"{self.suministro} – {self.mano_de_obra}"
 
 
+class LiquidacionSuministro(models.Model):
+    id_liquidacion = models.AutoField(primary_key=True)
+    suministro     = models.ForeignKey(Suministro,  on_delete=models.PROTECT, related_name="liquidaciones")
+    usuario        = models.ForeignKey(Usuario,     on_delete=models.PROTECT, related_name="liquidaciones")
+    tipo_trabajo   = models.ForeignKey(TipoTrabajo, on_delete=models.PROTECT, related_name="liquidaciones")
+    fecha          = models.DateField(auto_now_add=True)
+    observacion    = models.TextField(blank=True)
+    class Meta:
+        db_table = "liquidacion_suministro"
+    def __str__(self):
+        return f"Liq #{self.id_liquidacion} – {self.suministro}"
+
+
+class LiquidacionPartida(models.Model):
+    id_liquidacion_partida = models.AutoField(primary_key=True)
+    liquidacion  = models.ForeignKey(LiquidacionSuministro, on_delete=models.CASCADE,  related_name="partidas")
+    mano_de_obra = models.ForeignKey(ManoDeObra,            on_delete=models.PROTECT,  related_name="liquidaciones")
+    cantidad     = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    class Meta:
+        db_table = "liquidacion_partida"
+        unique_together = (("liquidacion", "mano_de_obra"),)
+
+
 class Recupero(models.Model):
     id_recupero = models.AutoField(primary_key=True)
     matricula   = models.CharField(max_length=50, unique=True)

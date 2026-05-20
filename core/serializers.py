@@ -12,6 +12,7 @@ from .models import (
     Inventario, DetalleInventario,
     Suministro, ManoDeObra, TipoTrabajo, SuministroTipoTrabajo,
     SuministroManoDeObra, Recupero, SuministroRecupero,
+    LiquidacionSuministro, LiquidacionPartida,
 )
 
 
@@ -493,3 +494,48 @@ class SuministroRecuperoSerializer(serializers.ModelSerializer):
         model  = SuministroRecupero
         fields = ['id_suministro_recupero', 'suministro', 'recupero',
                   'matricula', 'descripcion', 'cantidad', 'fecha']
+
+
+# ── Liquidacion Suministro ───────────────────────────────────────────────────
+class LiquidacionPartidaSerializer(serializers.ModelSerializer):
+    partida     = serializers.CharField(source='mano_de_obra.partida',     read_only=True)
+    descripcion = serializers.CharField(source='mano_de_obra.descripcion', read_only=True)
+    class Meta:
+        model  = LiquidacionPartida
+        fields = ['id_liquidacion_partida', 'mano_de_obra', 'partida', 'descripcion', 'cantidad']
+
+class LiquidacionSuministroSerializer(serializers.ModelSerializer):
+    numero_suministro  = serializers.CharField(source='suministro.numero_suministro', read_only=True)
+    usuario_nombre     = serializers.CharField(source='usuario.nombre',               read_only=True)
+    tipo_trabajo_nombre = serializers.CharField(source='tipo_trabajo.nombre',         read_only=True)
+    partidas           = LiquidacionPartidaSerializer(many=True, read_only=True)
+    class Meta:
+        model  = LiquidacionSuministro
+        fields = [
+            'id_liquidacion', 'suministro', 'numero_suministro',
+            'usuario', 'usuario_nombre', 'tipo_trabajo', 'tipo_trabajo_nombre',
+            'fecha', 'observacion', 'partidas',
+        ]
+
+class LiquidacionPartidaCreateSerializer(serializers.Serializer):
+    mano_de_obra = serializers.PrimaryKeyRelatedField(queryset=ManoDeObra.objects.all())
+    cantidad     = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+class LiquidacionSuministroCreateSerializer(serializers.Serializer):
+    suministro   = serializers.PrimaryKeyRelatedField(queryset=Suministro.objects.all())
+    usuario      = serializers.PrimaryKeyRelatedField(queryset=Usuario.objects.all())
+    tipo_trabajo = serializers.PrimaryKeyRelatedField(queryset=TipoTrabajo.objects.all())
+    observacion  = serializers.CharField(required=False, allow_blank=True, default='')
+    partidas     = LiquidacionPartidaCreateSerializer(many=True)
+
+    def create(self, validated_data):
+        from django.db import transaction
+        partidas_data = validated_data.pop('partidas')
+        with transaction.atomic():
+            liq = LiquidacionSuministro.objects.create(**validated_data)
+            for p in partidas_data:
+                LiquidacionPartida.objects.create(liquidacion=liq, **p)
+            # Cambiar estado del suministro a ejecutado
+            liq.suministro.estado = 'ejecutado'
+            liq.suministro.save(update_fields=['estado'])
+        return liq

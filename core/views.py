@@ -16,6 +16,7 @@ from .models import (
     Inventario, DetalleInventario,
     SSTEncargado, SSTSuministro, Suministro, TipoTrabajo, SuministroTipoTrabajo,
     SuministroManoDeObra, Recupero, SuministroRecupero,
+    LiquidacionSuministro, LiquidacionPartida,
 )
 from .serializers import (
     EmpresaSerializer, RolSerializer,
@@ -33,6 +34,7 @@ from .serializers import (
     InventarioSerializer, InventarioCreateSerializer,
     SuministroSerializer, TipoTrabajoSerializer,
     SuministroManoDeObraSerializer, RecuperoSerializer, SuministroRecuperoSerializer,
+    LiquidacionSuministroSerializer, LiquidacionSuministroCreateSerializer,
 )
 
 
@@ -1042,3 +1044,29 @@ class SuministroViewSet(viewsets.ReadOnlyModelViewSet):
         suministro = self.get_object()
         qs = SuministroRecupero.objects.filter(suministro=suministro).select_related('recupero')
         return Response(SuministroRecuperoSerializer(qs, many=True).data)
+
+
+# ── Liquidacion Suministro ────────────────────────────────────────────────────
+class LiquidacionViewSet(viewsets.ModelViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return LiquidacionSuministroCreateSerializer
+        return LiquidacionSuministroSerializer
+
+    def get_queryset(self):
+        qs = (LiquidacionSuministro.objects
+              .select_related('suministro', 'usuario', 'tipo_trabajo')
+              .prefetch_related('partidas__mano_de_obra')
+              .order_by('-fecha'))
+        suministro = self.request.query_params.get('suministro')
+        if suministro:
+            qs = qs.filter(suministro_id=suministro)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        serializer = LiquidacionSuministroCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        liq = serializer.save()
+        return Response(LiquidacionSuministroSerializer(liq).data, status=201)
