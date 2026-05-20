@@ -248,6 +248,13 @@ class SSTEncargadoInline(admin.TabularInline):
     extra  = 0
     fields = ["usuario", "rol"]
 
+@admin.register(SSTEncargado)
+class SSTEncargadoAdmin(admin.ModelAdmin):
+    list_display  = ["sst", "usuario", "rol"]
+    list_filter   = ["rol"]
+    search_fields = ["sst__codigo", "usuario__nombre"]
+    autocomplete_fields = ["usuario"]
+
 @admin.register(SST)
 class SSTAdmin(ExcelImportMixin, admin.ModelAdmin):
     list_display  = ["codigo", "distrito", "actividad", "empresa", "fecha_inicio", "fecha_termino", "monto_sst"]
