@@ -245,10 +245,9 @@ class SSTSuministroInline(admin.TabularInline):
 
 @admin.register(SSTSuministro)
 class SSTSuministroAdmin(admin.ModelAdmin):
-    list_display  = ["sst", "suministro", "asignado_a"]
-    list_filter   = ["sst__empresa"]
-    search_fields = ["sst__codigo", "suministro__numero_suministro"]
-    autocomplete_fields = ["suministro"]
+    list_display        = ["sst", "suministro", "asignado_a"]
+    search_fields       = ["sst__codigo", "suministro__numero_suministro"]
+    list_select_related = True
 
 class SSTEncargadoInline(admin.TabularInline):
     model  = SSTEncargado
