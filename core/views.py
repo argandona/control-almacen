@@ -15,7 +15,7 @@ from .models import (
     UploadConsumo, Consumo, DetalleConsumo,
     Inventario, DetalleInventario,
     SSTEncargado, SSTSuministro, Suministro, TipoTrabajo, SuministroTipoTrabajo,
-    LiquidacionSuministro, TipoTrabajoEjecutado, PartidaEjecutada,
+    SuministroManoDeObra, Recupero, SuministroRecupero,
 )
 from .serializers import (
     EmpresaSerializer, RolSerializer,
@@ -32,7 +32,7 @@ from .serializers import (
     UploadConsumoSerializer,
     InventarioSerializer, InventarioCreateSerializer,
     SuministroSerializer, TipoTrabajoSerializer,
-    LiquidacionSuministroSerializer, LiquidacionSuministroCreateSerializer,
+    SuministroManoDeObraSerializer, RecuperoSerializer, SuministroRecuperoSerializer,
 )
 
 
@@ -1022,46 +1022,23 @@ class SuministroViewSet(viewsets.ReadOnlyModelViewSet):
     queryset           = Suministro.objects.all()
 
     @action(detail=True, methods=['get'])
-    def tipos_trabajo(self, request, pk=None):
-        """GET /api/suministros/<id>/tipos_trabajo/ — tipos de trabajo con sus partidas."""
+    def mano_de_obra(self, request, pk=None):
+        """GET /api/suministros/<id>/mano_de_obra/ — partidas de MO del suministro."""
         suministro = self.get_object()
-        tipo_ids = (SuministroTipoTrabajo.objects
-                    .filter(suministro=suministro)
-                    .values_list('tipo_trabajo_id', flat=True))
-        tipos = (TipoTrabajo.objects
-                 .filter(id_tipo_trabajo__in=tipo_ids)
-                 .select_related('actividad')
-                 .prefetch_related('partidas__mano_de_obra'))
+        qs = SuministroManoDeObra.objects.filter(suministro=suministro).select_related('mano_de_obra')
+        return Response(SuministroManoDeObraSerializer(qs, many=True).data)
+
+    @action(detail=True, methods=['get'])
+    def tipos_trabajo(self, request, pk=None):
+        """GET /api/suministros/<id>/tipos_trabajo/ — tipos de trabajo del suministro."""
+        suministro = self.get_object()
+        tipo_ids = SuministroTipoTrabajo.objects.filter(suministro=suministro).values_list('tipo_trabajo_id', flat=True)
+        tipos = TipoTrabajo.objects.filter(id_tipo_trabajo__in=tipo_ids)
         return Response(TipoTrabajoSerializer(tipos, many=True).data)
 
-
-# ── Liquidacion Suministro ────────────────────────────────────────────────────
-class LiquidacionViewSet(viewsets.ModelViewSet):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_serializer_class(self):
-        if self.action == 'create':
-            return LiquidacionSuministroCreateSerializer
-        return LiquidacionSuministroSerializer
-
-    def get_queryset(self):
-        qs = (LiquidacionSuministro.objects
-              .select_related('suministro', 'usuario')
-              .prefetch_related(
-                  'tipos_ejecutados__tipo_trabajo',
-                  'tipos_ejecutados__partidas__mano_de_obra',
-              )
-              .order_by('-fecha'))
-        suministro = self.request.query_params.get('suministro')
-        if suministro:
-            qs = qs.filter(suministro_id=suministro)
-        usuario = self.request.query_params.get('usuario')
-        if usuario:
-            qs = qs.filter(usuario_id=usuario)
-        return qs
-
-    def create(self, request, *args, **kwargs):
-        serializer = LiquidacionSuministroCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        liq = serializer.save()
-        return Response(LiquidacionSuministroSerializer(liq).data, status=201)
+    @action(detail=True, methods=['get'])
+    def recuperos(self, request, pk=None):
+        """GET /api/suministros/<id>/recuperos/ — recuperos registrados del suministro."""
+        suministro = self.get_object()
+        qs = SuministroRecupero.objects.filter(suministro=suministro).select_related('recupero')
+        return Response(SuministroRecuperoSerializer(qs, many=True).data)

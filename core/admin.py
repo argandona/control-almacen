@@ -19,9 +19,9 @@ from .models import (
     UploadConsumo, Consumo, DetalleConsumo,
     Inventario, DetalleInventario,
     Suministro, SSTSuministro, SuministroTipoTrabajo,
-    ManoDeObra, TipoTrabajo, TipoTrabajoPartida,
+    ManoDeObra, TipoTrabajo, SuministroManoDeObra,
     SSTEncargado, Actividad,
-    LiquidacionSuministro, TipoTrabajoEjecutado, PartidaEjecutada,
+    Recupero, SuministroRecupero,
 )
 
 
@@ -301,15 +301,31 @@ class SuministroTipoTrabajoInline(admin.TabularInline):
     extra  = 0
     fields = ["tipo_trabajo"]
 
+class SuministroManoDeObraInline(admin.TabularInline):
+    model  = SuministroManoDeObra
+    extra  = 0
+    fields = ["mano_de_obra"]
+
+class SuministroRecuperoInline(admin.TabularInline):
+    model  = SuministroRecupero
+    extra  = 0
+    fields = ["recupero", "cantidad", "fecha"]
+
 @admin.register(SuministroTipoTrabajo)
 class SuministroTipoTrabajoAdmin(admin.ModelAdmin):
     list_display        = ["suministro", "tipo_trabajo"]
     search_fields       = ["suministro__numero_suministro", "tipo_trabajo__nombre"]
     list_select_related = True
 
+@admin.register(SuministroManoDeObra)
+class SuministroManoDeObraAdmin(admin.ModelAdmin):
+    list_display        = ["suministro", "mano_de_obra"]
+    search_fields       = ["suministro__numero_suministro", "mano_de_obra__partida"]
+    list_select_related = True
+
 @admin.register(Suministro)
 class SuministroAdmin(ExcelImportMixin, admin.ModelAdmin):
-    inlines = [SuministroTipoTrabajoInline]
+    inlines = [SuministroTipoTrabajoInline, SuministroManoDeObraInline, SuministroRecuperoInline]
     list_display  = ["numero_suministro", "medidor", "distrito", "estado", "monto_sum", "fecha_ejecucion"]
     list_filter   = ["estado"]
     search_fields = ["numero_suministro", "medidor"]
@@ -550,33 +566,32 @@ class ActividadAdmin(admin.ModelAdmin):
 
 
 # ── TipoTrabajo ───────────────────────────────────────────────────────────────
-class TipoTrabajoPartidaInline(admin.TabularInline):
-    model  = TipoTrabajoPartida
-    extra  = 0
-    fields = ["mano_de_obra"]
-
 @admin.register(TipoTrabajo)
 class TipoTrabajoAdmin(admin.ModelAdmin):
-    list_display  = ["nombre", "actividad"]
-    list_filter   = ["actividad"]
+    list_display  = ["nombre"]
     search_fields = ["nombre"]
-    inlines       = [TipoTrabajoPartidaInline]
 
 
-# ── LiquidacionSuministro ─────────────────────────────────────────────────────
-class PartidaEjecutadaInline(admin.TabularInline):
-    model  = PartidaEjecutada
-    extra  = 0
-    fields = ["mano_de_obra", "cantidad"]
+# ── Recupero ──────────────────────────────────────────────────────────────────
+@admin.register(Recupero)
+class RecuperoAdmin(ExcelImportMixin, admin.ModelAdmin):
+    list_display  = ["matricula", "descripcion"]
+    search_fields = ["matricula", "descripcion"]
+    excel_fields  = [
+        ("matricula",   "Matrícula"),
+        ("descripcion", "Descripción"),
+    ]
 
-class TipoTrabajoEjecutadoInline(admin.TabularInline):
-    model  = TipoTrabajoEjecutado
-    extra  = 0
-    fields = ["tipo_trabajo"]
+    def import_row(self, data):
+        Recupero.objects.update_or_create(
+            matricula=_str(data["matricula"]),
+            defaults={"descripcion": _str(data["descripcion"])},
+        )
 
-@admin.register(LiquidacionSuministro)
-class LiquidacionSuministroAdmin(admin.ModelAdmin):
-    list_display  = ["id_liquidacion", "suministro", "usuario", "fecha"]
-    list_filter   = ["fecha"]
-    search_fields = ["suministro__numero_suministro", "usuario__nombre"]
-    inlines       = [TipoTrabajoEjecutadoInline]
+
+# ── SuministroRecupero ────────────────────────────────────────────────────────
+@admin.register(SuministroRecupero)
+class SuministroRecuperoAdmin(admin.ModelAdmin):
+    list_display        = ["suministro", "recupero", "cantidad", "fecha"]
+    search_fields       = ["suministro__numero_suministro", "recupero__matricula"]
+    list_select_related = True

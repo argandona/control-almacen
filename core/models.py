@@ -525,13 +525,11 @@ class DetalleInventario(models.Model):
 
 class TipoTrabajo(models.Model):
     id_tipo_trabajo = models.AutoField(primary_key=True)
-    nombre          = models.CharField(max_length=200)
-    actividad       = models.ForeignKey(Actividad, on_delete=models.PROTECT, related_name="tipos_trabajo")
+    nombre          = models.CharField(max_length=200, unique=True)
     class Meta:
         db_table = "tipo_trabajo"
-        unique_together = (("actividad", "nombre"),)
     def __str__(self):
-        return f"{self.actividad} – {self.nombre}"
+        return self.nombre
 
 
 class SuministroTipoTrabajo(models.Model):
@@ -543,41 +541,34 @@ class SuministroTipoTrabajo(models.Model):
         unique_together = (("suministro", "tipo_trabajo"),)
 
 
-class TipoTrabajoPartida(models.Model):
-    id_tipo_trabajo_partida = models.AutoField(primary_key=True)
-    tipo_trabajo = models.ForeignKey(TipoTrabajo, on_delete=models.PROTECT, related_name="partidas")
-    mano_de_obra = models.ForeignKey(ManoDeObra,  on_delete=models.PROTECT, related_name="tipos_trabajo")
+class SuministroManoDeObra(models.Model):
+    id_suministro_mano_de_obra = models.AutoField(primary_key=True)
+    suministro   = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="mano_de_obra")
+    mano_de_obra = models.ForeignKey(ManoDeObra, on_delete=models.PROTECT, related_name="suministros")
     class Meta:
-        db_table = "tipo_trabajo_partida"
-        unique_together = (("tipo_trabajo", "mano_de_obra"),)
-
-
-class LiquidacionSuministro(models.Model):
-    id_liquidacion = models.AutoField(primary_key=True)
-    suministro     = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="liquidaciones")
-    usuario        = models.ForeignKey(Usuario,    on_delete=models.PROTECT, related_name="liquidaciones")
-    fecha          = models.DateField(auto_now_add=True)
-    observacion    = models.TextField(blank=True)
-    class Meta:
-        db_table = "liquidacion_suministro"
+        db_table = "suministro_mano_de_obra"
+        unique_together = (("suministro", "mano_de_obra"),)
     def __str__(self):
-        return f"Liquidación #{self.id_liquidacion} – {self.suministro}"
+        return f"{self.suministro} – {self.mano_de_obra}"
 
 
-class TipoTrabajoEjecutado(models.Model):
-    id_tipo_trabajo_ejecutado = models.AutoField(primary_key=True)
-    liquidacion  = models.ForeignKey(LiquidacionSuministro, on_delete=models.CASCADE, related_name="tipos_ejecutados")
-    tipo_trabajo = models.ForeignKey(TipoTrabajo,            on_delete=models.PROTECT, related_name="ejecutados")
+class Recupero(models.Model):
+    id_recupero = models.AutoField(primary_key=True)
+    matricula   = models.CharField(max_length=50, unique=True)
+    descripcion = models.CharField(max_length=200)
     class Meta:
-        db_table = "tipo_trabajo_ejecutado"
-        unique_together = (("liquidacion", "tipo_trabajo"),)
+        db_table = "recupero"
+    def __str__(self):
+        return f"{self.matricula} - {self.descripcion}"
 
 
-class PartidaEjecutada(models.Model):
-    id_partida_ejecutada   = models.AutoField(primary_key=True)
-    tipo_trabajo_ejecutado = models.ForeignKey(TipoTrabajoEjecutado, on_delete=models.CASCADE, related_name="partidas")
-    mano_de_obra           = models.ForeignKey(ManoDeObra,           on_delete=models.PROTECT, related_name="partidas_ejecutadas")
-    cantidad               = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+class SuministroRecupero(models.Model):
+    id_suministro_recupero = models.AutoField(primary_key=True)
+    suministro  = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="recuperos")
+    recupero    = models.ForeignKey(Recupero,   on_delete=models.PROTECT, related_name="suministros")
+    cantidad    = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    fecha       = models.DateField()
     class Meta:
-        db_table = "partida_ejecutada"
-        unique_together = (("tipo_trabajo_ejecutado", "mano_de_obra"),)
+        db_table = "suministro_recupero"
+    def __str__(self):
+        return f"{self.suministro} – {self.recupero} x{self.cantidad}"
