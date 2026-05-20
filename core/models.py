@@ -140,12 +140,11 @@ class SSTEncargado(models.Model):
     id_sst_encargado = models.AutoField(primary_key=True)
     sst     = models.ForeignKey(SST,     on_delete=models.PROTECT, related_name="sst_encargados")
     usuario = models.ForeignKey(Usuario, on_delete=models.PROTECT, related_name="sst_encargados")
-    rol     = models.CharField(max_length=20, choices=[("encargado", "Encargado"), ("capataz", "Capataz")])
     class Meta:
         db_table = "sst_encargado"
         unique_together = (("sst", "usuario"),)
     def __str__(self):
-        return f"{self.usuario} ({self.rol}) → {self.sst}"
+        return f"{self.usuario} → {self.sst}"
 
 
 class Suministro(models.Model):

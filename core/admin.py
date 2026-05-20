@@ -252,13 +252,12 @@ class SSTSuministroAdmin(admin.ModelAdmin):
 class SSTEncargadoInline(admin.TabularInline):
     model  = SSTEncargado
     extra  = 0
-    fields = ["usuario", "rol"]
+    fields = ["usuario"]
 
 @admin.register(SSTEncargado)
 class SSTEncargadoAdmin(admin.ModelAdmin):
-    list_display  = ["sst", "usuario", "rol"]
-    list_filter   = ["rol"]
-    search_fields = ["sst__codigo", "usuario__nombre"]
+    list_display        = ["sst", "usuario"]
+    search_fields       = ["sst__codigo", "usuario__nombre"]
     autocomplete_fields = ["usuario"]
 
 @admin.register(SST)
