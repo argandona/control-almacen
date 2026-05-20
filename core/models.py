@@ -171,19 +171,19 @@ class ManoDeObra(models.Model):
         return f"{self.partida} — {self.descripcion}"
 
 
-class SSTManoDeObra(models.Model):
-    id_sst_mano_de_obra = models.AutoField(primary_key=True)
-    sst          = models.ForeignKey(SST,        on_delete=models.PROTECT, related_name="sst_mano_de_obra")
-    mano_de_obra = models.ForeignKey(ManoDeObra, on_delete=models.PROTECT, related_name="sst_mano_de_obra")
+class SuministroManoDeObra(models.Model):
+    id_suministro_mano_de_obra = models.AutoField(primary_key=True)
+    suministro   = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="mano_de_obra")
+    mano_de_obra = models.ForeignKey(ManoDeObra, on_delete=models.PROTECT, related_name="suministros")
     cantidad     = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     class Meta:
-        db_table = "sst_mano_de_obra"
-        unique_together = ("sst", "mano_de_obra")
+        db_table = "suministro_mano_de_obra"
+        unique_together = ("suministro", "mano_de_obra")
     @property
     def costo_total(self):
         return self.cantidad * self.mano_de_obra.precio
     def __str__(self):
-        return f"{self.sst} | {self.mano_de_obra}"
+        return f"{self.suministro} | {self.mano_de_obra}"
 
 
 class SSTEncargado(models.Model):

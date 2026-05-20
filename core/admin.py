@@ -18,7 +18,7 @@ from .models import (
     Pedido, DetallePedido, Devolucion, DetalleDevolucion,
     UploadConsumo, Consumo, DetalleConsumo,
     Inventario, DetalleInventario,
-    Suministro, SSTSuministro, ManoDeObra, SSTManoDeObra, SSTEncargado,
+    Suministro, SSTSuministro, ManoDeObra, SuministroManoDeObra, SSTEncargado,
 )
 
 
@@ -240,11 +240,6 @@ class SSTSuministroInline(admin.TabularInline):
     fields = ["suministro", "asignado_a"]
     autocomplete_fields = ["suministro"]
 
-class SSTManoDeObraInline(admin.TabularInline):
-    model  = SSTManoDeObra
-    extra  = 0
-    fields = ["mano_de_obra", "cantidad"]
-
 class SSTEncargadoInline(admin.TabularInline):
     model  = SSTEncargado
     extra  = 0
@@ -255,7 +250,7 @@ class SSTAdmin(ExcelImportMixin, admin.ModelAdmin):
     list_display  = ["codigo", "distrito", "actividad", "empresa", "fecha_inicio", "fecha_termino", "monto_sst"]
     search_fields = ["codigo", "distrito"]
     list_filter   = ["empresa"]
-    inlines       = [SSTEncargadoInline, SSTSuministroInline, SSTManoDeObraInline]
+    inlines       = [SSTEncargadoInline, SSTSuministroInline]
     excel_fields  = [
         ("empresa",       "Empresa (nombre)"),
         ("codigo",        "Código SST"),
@@ -282,8 +277,14 @@ class SSTAdmin(ExcelImportMixin, admin.ModelAdmin):
 
 
 # ── Suministro ────────────────────────────────────────────────────────────────
+class SuministroManoDeObraInline(admin.TabularInline):
+    model  = SuministroManoDeObra
+    extra  = 0
+    fields = ["mano_de_obra", "cantidad"]
+
 @admin.register(Suministro)
 class SuministroAdmin(ExcelImportMixin, admin.ModelAdmin):
+    inlines = [SuministroManoDeObraInline]
     list_display  = ["numero_suministro", "medidor", "distrito", "estado", "monto_sum", "fecha_ejecucion"]
     list_filter   = ["estado"]
     search_fields = ["numero_suministro", "medidor"]
