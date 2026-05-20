@@ -1,9 +1,9 @@
+from decimal import Decimal
+
 from django.db import models
-from django.db.models import F
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from datetime import date
-from decimal import Decimal
 
 
 class Empresa(models.Model):
@@ -122,8 +122,9 @@ class Actividad(models.Model):
 
 class SST(models.Model):
     id_sst        = models.AutoField(primary_key=True)
-    empresa       = models.ForeignKey(Empresa,   on_delete=models.PROTECT, related_name="ssts")
+    sst           = models.CharField(max_length=7)
     codigo        = models.CharField(max_length=20, blank=True, db_index=True)
+    empresa       = models.ForeignKey(Empresa,   on_delete=models.PROTECT, related_name="ssts")
     distrito      = models.CharField(max_length=100)
     actividad     = models.ForeignKey(Actividad, on_delete=models.PROTECT, related_name="ssts", null=True, blank=True)
     fecha_inicio  = models.DateField(null=True, blank=True)
@@ -132,37 +133,23 @@ class SST(models.Model):
     class Meta:
         db_table = "sst"
     def __str__(self):
-        return f"{self.codigo} - {self.distrito}"
+        return f"{self.distrito} - {self.actividad}"
 
 
-class TipoTrabajo(models.Model):
-    id_tipo_trabajo = models.AutoField(primary_key=True)
-    actividad       = models.ForeignKey(Actividad, on_delete=models.PROTECT, related_name="tipos_trabajo")
-    nombre          = models.CharField(max_length=200)
+class SSTEncargado(models.Model):
+    id_sst_encargado = models.AutoField(primary_key=True)
+    sst     = models.ForeignKey(SST,     on_delete=models.PROTECT, related_name="sst_encargados")
+    usuario = models.ForeignKey(Usuario, on_delete=models.PROTECT, related_name="sst_encargados")
+    rol     = models.CharField(max_length=20, choices=[("encargado", "Encargado"), ("capataz", "Capataz")])
     class Meta:
-        db_table = "tipo_trabajo"
-        unique_together = ("actividad", "nombre")
+        db_table = "sst_encargado"
+        unique_together = (("sst", "usuario"),)
     def __str__(self):
-        return f"{self.actividad} → {self.nombre}"
-
-
-class TipoTrabajoPartida(models.Model):
-    id_tipo_trabajo_partida = models.AutoField(primary_key=True)
-    tipo_trabajo = models.ForeignKey(TipoTrabajo,  on_delete=models.PROTECT, related_name="partidas")
-    mano_de_obra = models.ForeignKey("ManoDeObra", on_delete=models.PROTECT, related_name="tipos_trabajo")
-    class Meta:
-        db_table = "tipo_trabajo_partida"
-        unique_together = ("tipo_trabajo", "mano_de_obra")
-    def __str__(self):
-        return f"{self.tipo_trabajo} | {self.mano_de_obra}"
+        return f"{self.usuario} ({self.rol}) → {self.sst}"
 
 
 class Suministro(models.Model):
-    ESTADO_CHOICES = [
-        ("asignado",  "Asignado"),
-        ("ejecutado", "Ejecutado"),
-        ("devuelto",  "Devuelto"),
-    ]
+    ESTADO_CHOICES = [("asignado", "Asignado"), ("ejecutado", "Ejecutado"), ("devuelto", "Devuelto")]
     id_suministro     = models.AutoField(primary_key=True)
     numero_suministro = models.CharField(max_length=20, unique=True, db_index=True)
     medidor           = models.CharField(max_length=20, blank=True)
@@ -176,30 +163,19 @@ class Suministro(models.Model):
     class Meta:
         db_table = "suministro"
     def __str__(self):
-        return f"{self.numero_suministro} — {self.get_estado_display()}"
+        return self.numero_suministro
 
 
 class SSTSuministro(models.Model):
     id_sst_suministro = models.AutoField(primary_key=True)
     sst        = models.ForeignKey(SST,        on_delete=models.PROTECT, related_name="sst_suministros")
     suministro = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="sst_suministros")
-    asignado_a = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name="suministros_asignados")
+    asignado_a = models.ForeignKey(Usuario,    on_delete=models.SET_NULL, null=True, blank=True, related_name="suministros_asignados")
     class Meta:
         db_table = "sst_suministro"
-        unique_together = ("sst", "suministro")
+        unique_together = (("sst", "suministro"),)
     def __str__(self):
-        return f"{self.sst} ↔ {self.suministro}"
-
-
-class SuministroTipoTrabajo(models.Model):
-    id_suministro_tipo_trabajo = models.AutoField(primary_key=True)
-    suministro   = models.ForeignKey(Suministro,  on_delete=models.PROTECT, related_name="tipos_trabajo")
-    tipo_trabajo = models.ForeignKey(TipoTrabajo, on_delete=models.PROTECT, related_name="suministros")
-    class Meta:
-        db_table = "suministro_tipo_trabajo"
-        unique_together = ("suministro", "tipo_trabajo")
-    def __str__(self):
-        return f"{self.suministro} → {self.tipo_trabajo}"
+        return f"{self.sst} → {self.suministro}"
 
 
 class ManoDeObra(models.Model):
@@ -210,72 +186,13 @@ class ManoDeObra(models.Model):
     class Meta:
         db_table = "mano_de_obra"
     def __str__(self):
-        return f"{self.partida} — {self.descripcion}"
-
-
-class SSTEncargado(models.Model):
-    ROL_CHOICES = [("encargado", "Encargado"), ("capataz", "Capataz")]
-    id_sst_encargado = models.AutoField(primary_key=True)
-    sst     = models.ForeignKey(SST,     on_delete=models.PROTECT, related_name="sst_encargados")
-    usuario = models.ForeignKey(Usuario, on_delete=models.PROTECT, related_name="sst_encargados")
-    rol     = models.CharField(max_length=20, choices=ROL_CHOICES)
-    class Meta:
-        db_table = "sst_encargado"
-        unique_together = ("sst", "usuario")
-    def clean(self):
-        if self.usuario_id and self.usuario.rol_id not in (Rol.ENCARGADO, Rol.CAPATAZ):
-            raise ValidationError("Solo Encargados y Capataces pueden ejecutar SSTs.")
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        self.sst.sst_suministros.filter(asignado_a__isnull=True).update(asignado_a=self.usuario)
-    def __str__(self):
-        return f"{self.sst} ← {self.usuario} ({self.get_rol_display()})"
-
-
-class LiquidacionSuministro(models.Model):
-    id_liquidacion = models.AutoField(primary_key=True)
-    suministro     = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="liquidaciones")
-    usuario        = models.ForeignKey(Usuario,    on_delete=models.PROTECT, related_name="liquidaciones")
-    fecha          = models.DateField(auto_now_add=True)
-    observacion    = models.TextField(blank=True)
-    class Meta:
-        db_table = "liquidacion_suministro"
-    def clean(self):
-        if self.usuario_id and self.usuario.rol_id not in (Rol.ENCARGADO, Rol.CAPATAZ):
-            raise ValidationError("Solo Encargados y Capataces pueden liquidar suministros.")
-    def __str__(self):
-        return f"Liquidación #{self.pk} — {self.suministro}"
-
-
-class TipoTrabajoEjecutado(models.Model):
-    id_tipo_trabajo_ejecutado = models.AutoField(primary_key=True)
-    liquidacion  = models.ForeignKey(LiquidacionSuministro, on_delete=models.CASCADE, related_name="tipos_ejecutados")
-    tipo_trabajo = models.ForeignKey(TipoTrabajo,           on_delete=models.PROTECT, related_name="ejecutados")
-    class Meta:
-        db_table = "tipo_trabajo_ejecutado"
-        unique_together = ("liquidacion", "tipo_trabajo")
-    def __str__(self):
-        return f"{self.liquidacion} | {self.tipo_trabajo}"
-
-
-class PartidaEjecutada(models.Model):
-    id_partida_ejecutada   = models.AutoField(primary_key=True)
-    tipo_trabajo_ejecutado = models.ForeignKey(TipoTrabajoEjecutado, on_delete=models.CASCADE, related_name="partidas")
-    mano_de_obra           = models.ForeignKey(ManoDeObra,           on_delete=models.PROTECT, related_name="partidas_ejecutadas")
-    cantidad               = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
-    class Meta:
-        db_table = "partida_ejecutada"
-        unique_together = ("tipo_trabajo_ejecutado", "mano_de_obra")
-    @property
-    def costo_total(self):
-        return self.cantidad * self.mano_de_obra.precio
-    def __str__(self):
-        return f"{self.mano_de_obra} × {self.cantidad}"
+        return f"{self.partida} - {self.descripcion}"
 
 
 class Material(models.Model):
     id_material = models.AutoField(primary_key=True)
     matricula   = models.CharField(max_length=50, unique=True)
+    marca = models.CharField(max_length=200)
     descripcion = models.CharField(max_length=200)
     precio      = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
     class Meta:
@@ -293,13 +210,10 @@ class StockCamion(models.Model):
         db_table = "stock_camion"
         unique_together = ("camion", "material")
     def descontar(self, cantidad):
-        updated = StockCamion.objects.filter(pk=self.pk, cantidad__gte=cantidad).update(cantidad=F('cantidad') - cantidad)
-        if not updated:
-            raise ValidationError(f"Stock insuficiente para {self.material}.")
-        self.refresh_from_db()
+        if self.cantidad - cantidad < 0: raise ValidationError(f"Stock insuficiente para {self.material}.")
+        self.cantidad -= cantidad; self.save()
     def agregar(self, cantidad):
-        StockCamion.objects.filter(pk=self.pk).update(cantidad=F('cantidad') + cantidad)
-        self.refresh_from_db()
+        self.cantidad += cantidad; self.save()
     def __str__(self):
         return f"{self.camion} | {self.material} | {self.cantidad}"
 
@@ -325,13 +239,10 @@ class StockAlmacen(models.Model):
         db_table = "stock_almacen"
         unique_together = ("almacen", "material")
     def descontar(self, cantidad):
-        updated = StockAlmacen.objects.filter(pk=self.pk, cantidad__gte=cantidad).update(cantidad=F('cantidad') - cantidad)
-        if not updated:
-            raise ValidationError(f"Stock insuficiente en {self.almacen}.")
-        self.refresh_from_db()
+        if self.cantidad - cantidad < 0: raise ValidationError(f"Stock insuficiente en {self.almacen}.")
+        self.cantidad -= cantidad; self.save()
     def agregar(self, cantidad):
-        StockAlmacen.objects.filter(pk=self.pk).update(cantidad=F('cantidad') + cantidad)
-        self.refresh_from_db()
+        self.cantidad += cantidad; self.save()
     def __str__(self):
         return f"{self.almacen} | {self.material} | {self.cantidad}"
 
@@ -589,6 +500,7 @@ class Inventario(models.Model):
     observacion   = models.TextField(blank=True)
     class Meta:
         db_table = "inventario"
+        unique_together = [("camion","mes","anio"),("almacen","mes","anio")]
     def clean(self):
         if self.usuario_id and not self.usuario.puede_hacer_inventario():
             raise ValidationError("Solo el Encargado de Almacén puede realizar inventarios.")
@@ -606,7 +518,67 @@ class DetalleInventario(models.Model):
     observacion      = models.TextField(blank=True)
     class Meta:
         db_table = "detalle_inventario"
-        ordering = ['material__matricula']
+        ordering = ["material__matricula"]
     def save(self, *args, **kwargs):
         self.diferencia = self.cantidad_fisica - self.cantidad_teorica
         super().save(*args, **kwargs)
+
+
+class TipoTrabajo(models.Model):
+    id_tipo_trabajo = models.AutoField(primary_key=True)
+    nombre          = models.CharField(max_length=200)
+    actividad       = models.ForeignKey(Actividad, on_delete=models.PROTECT, related_name="tipos_trabajo")
+    class Meta:
+        db_table = "tipo_trabajo"
+        unique_together = (("actividad", "nombre"),)
+    def __str__(self):
+        return f"{self.actividad} – {self.nombre}"
+
+
+class SuministroTipoTrabajo(models.Model):
+    id_suministro_tipo_trabajo = models.AutoField(primary_key=True)
+    suministro   = models.ForeignKey(Suministro,  on_delete=models.PROTECT, related_name="tipos_trabajo")
+    tipo_trabajo = models.ForeignKey(TipoTrabajo, on_delete=models.PROTECT, related_name="suministros")
+    class Meta:
+        db_table = "suministro_tipo_trabajo"
+        unique_together = (("suministro", "tipo_trabajo"),)
+
+
+class TipoTrabajoPartida(models.Model):
+    id_tipo_trabajo_partida = models.AutoField(primary_key=True)
+    tipo_trabajo = models.ForeignKey(TipoTrabajo, on_delete=models.PROTECT, related_name="partidas")
+    mano_de_obra = models.ForeignKey(ManoDeObra,  on_delete=models.PROTECT, related_name="tipos_trabajo")
+    class Meta:
+        db_table = "tipo_trabajo_partida"
+        unique_together = (("tipo_trabajo", "mano_de_obra"),)
+
+
+class LiquidacionSuministro(models.Model):
+    id_liquidacion = models.AutoField(primary_key=True)
+    suministro     = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="liquidaciones")
+    usuario        = models.ForeignKey(Usuario,    on_delete=models.PROTECT, related_name="liquidaciones")
+    fecha          = models.DateField(auto_now_add=True)
+    observacion    = models.TextField(blank=True)
+    class Meta:
+        db_table = "liquidacion_suministro"
+    def __str__(self):
+        return f"Liquidación #{self.id_liquidacion} – {self.suministro}"
+
+
+class TipoTrabajoEjecutado(models.Model):
+    id_tipo_trabajo_ejecutado = models.AutoField(primary_key=True)
+    liquidacion  = models.ForeignKey(LiquidacionSuministro, on_delete=models.CASCADE, related_name="tipos_ejecutados")
+    tipo_trabajo = models.ForeignKey(TipoTrabajo,            on_delete=models.PROTECT, related_name="ejecutados")
+    class Meta:
+        db_table = "tipo_trabajo_ejecutado"
+        unique_together = (("liquidacion", "tipo_trabajo"),)
+
+
+class PartidaEjecutada(models.Model):
+    id_partida_ejecutada   = models.AutoField(primary_key=True)
+    tipo_trabajo_ejecutado = models.ForeignKey(TipoTrabajoEjecutado, on_delete=models.CASCADE, related_name="partidas")
+    mano_de_obra           = models.ForeignKey(ManoDeObra,           on_delete=models.PROTECT, related_name="partidas_ejecutadas")
+    cantidad               = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    class Meta:
+        db_table = "partida_ejecutada"
+        unique_together = (("tipo_trabajo_ejecutado", "mano_de_obra"),)
