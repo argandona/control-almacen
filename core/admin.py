@@ -243,6 +243,13 @@ class SSTSuministroInline(admin.TabularInline):
     fields = ["suministro", "asignado_a"]
     autocomplete_fields = ["suministro"]
 
+@admin.register(SSTSuministro)
+class SSTSuministroAdmin(admin.ModelAdmin):
+    list_display  = ["sst", "suministro", "asignado_a"]
+    list_filter   = ["sst__empresa"]
+    search_fields = ["sst__codigo", "suministro__numero_suministro"]
+    autocomplete_fields = ["suministro"]
+
 class SSTEncargadoInline(admin.TabularInline):
     model  = SSTEncargado
     extra  = 0
@@ -294,6 +301,13 @@ class SuministroTipoTrabajoInline(admin.TabularInline):
     model  = SuministroTipoTrabajo
     extra  = 0
     fields = ["tipo_trabajo"]
+
+@admin.register(SuministroTipoTrabajo)
+class SuministroTipoTrabajoAdmin(admin.ModelAdmin):
+    list_display  = ["suministro", "tipo_trabajo"]
+    list_filter   = ["tipo_trabajo__actividad"]
+    search_fields = ["suministro__numero_suministro", "tipo_trabajo__nombre"]
+    autocomplete_fields = ["suministro"]
 
 @admin.register(Suministro)
 class SuministroAdmin(ExcelImportMixin, admin.ModelAdmin):
