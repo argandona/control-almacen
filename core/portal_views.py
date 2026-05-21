@@ -18,7 +18,7 @@ from .models import (
     Pedido, DetallePedido,
     Devolucion, DetalleDevolucion,
     Inventario, DetalleInventario,
-    SST, UsuarioCamion,
+    SST, SSTEncargado, SSTSuministro, Suministro, UsuarioCamion,
 )
 from .security import (
     verificar_clave, hashear_clave, migrar_clave_si_legacy,
@@ -901,3 +901,120 @@ def portal_toggle_usuario(request, uid):
     estado = 'activado' if target.activo else 'desactivado'
     messages.success(request, f'Usuario "{target.nombre}" {estado}.')
     return redirect('portal_usuarios')
+
+
+# ── SST / Suministros — asignación (SuperAdmin) ───────────────────────────────
+
+@_superadmin_required
+def portal_sst_lista(request):
+    usuario = _usuario_session(request)
+    ssts = (SST.objects
+            .select_related('empresa', 'actividad')
+            .prefetch_related('sst_encargados__usuario')
+            .order_by('sst', 'codigo'))
+    return render(request, 'portal/sst_lista.html', {
+        'usuario': usuario,
+        'ssts':    ssts,
+    })
+
+
+@_superadmin_required
+def portal_sst_detalle(request, sst_id):
+    usuario = _usuario_session(request)
+    sst = get_object_or_404(SST.objects.select_related('empresa', 'actividad'), pk=sst_id)
+
+    encargados   = SSTEncargado.objects.filter(sst=sst).select_related('usuario')
+    sst_sums     = SSTSuministro.objects.filter(sst=sst).select_related('suministro', 'asignado_a')
+
+    # usuarios disponibles para asignar como encargado (no asignados aún)
+    encargado_ids = encargados.values_list('usuario_id', flat=True)
+    usuarios_disponibles = (Usuario.objects
+                            .filter(activo=True)
+                            .exclude(pk__in=encargado_ids)
+                            .order_by('nombre'))
+
+    # suministros no asignados a esta SST aún
+    sum_asignados_ids = sst_sums.values_list('suministro_id', flat=True)
+    suministros_disponibles = (Suministro.objects
+                               .exclude(pk__in=sum_asignados_ids)
+                               .order_by('numero_suministro'))
+
+    # todos los usuarios para asignar como responsable de suministro
+    todos_usuarios = Usuario.objects.filter(activo=True).order_by('nombre')
+
+    return render(request, 'portal/sst_detalle.html', {
+        'usuario':                 usuario,
+        'sst':                     sst,
+        'encargados':              encargados,
+        'sst_sums':                sst_sums,
+        'usuarios_disponibles':    usuarios_disponibles,
+        'suministros_disponibles': suministros_disponibles,
+        'todos_usuarios':          todos_usuarios,
+    })
+
+
+@_superadmin_required
+def portal_sst_agregar_encargado(request, sst_id):
+    if request.method != 'POST':
+        return redirect('portal_sst_detalle', sst_id=sst_id)
+    sst        = get_object_or_404(SST, pk=sst_id)
+    usuario_id = request.POST.get('usuario_id')
+    if usuario_id:
+        usuario_obj = get_object_or_404(Usuario, pk=usuario_id)
+        _, created = SSTEncargado.objects.get_or_create(sst=sst, usuario=usuario_obj)
+        if created:
+            messages.success(request, f'{usuario_obj.nombre} asignado como encargado.')
+        else:
+            messages.warning(request, f'{usuario_obj.nombre} ya era encargado de esta SST.')
+    return redirect('portal_sst_detalle', sst_id=sst_id)
+
+
+@_superadmin_required
+def portal_sst_quitar_encargado(request, sst_id, enc_id):
+    if request.method != 'POST':
+        return redirect('portal_sst_detalle', sst_id=sst_id)
+    SSTEncargado.objects.filter(pk=enc_id, sst_id=sst_id).delete()
+    messages.success(request, 'Encargado quitado.')
+    return redirect('portal_sst_detalle', sst_id=sst_id)
+
+
+@_superadmin_required
+def portal_sst_agregar_suministro(request, sst_id):
+    if request.method != 'POST':
+        return redirect('portal_sst_detalle', sst_id=sst_id)
+    sst           = get_object_or_404(SST, pk=sst_id)
+    suministro_id = request.POST.get('suministro_id')
+    asignado_id   = request.POST.get('asignado_id') or None
+    if suministro_id:
+        suministro  = get_object_or_404(Suministro, pk=suministro_id)
+        asignado    = get_object_or_404(Usuario, pk=asignado_id) if asignado_id else None
+        obj, created = SSTSuministro.objects.get_or_create(
+            sst=sst, suministro=suministro,
+            defaults={'asignado_a': asignado},
+        )
+        if not created:
+            messages.warning(request, f'Suministro {suministro.numero_suministro} ya estaba asignado a esta SST.')
+        else:
+            messages.success(request, f'Suministro {suministro.numero_suministro} asignado.')
+    return redirect('portal_sst_detalle', sst_id=sst_id)
+
+
+@_superadmin_required
+def portal_sst_quitar_suministro(request, sst_id, ss_id):
+    if request.method != 'POST':
+        return redirect('portal_sst_detalle', sst_id=sst_id)
+    SSTSuministro.objects.filter(pk=ss_id, sst_id=sst_id).delete()
+    messages.success(request, 'Suministro quitado de la SST.')
+    return redirect('portal_sst_detalle', sst_id=sst_id)
+
+
+@_superadmin_required
+def portal_sst_cambiar_asignado(request, sst_id, ss_id):
+    if request.method != 'POST':
+        return redirect('portal_sst_detalle', sst_id=sst_id)
+    ss          = get_object_or_404(SSTSuministro, pk=ss_id, sst_id=sst_id)
+    asignado_id = request.POST.get('asignado_id') or None
+    ss.asignado_a = get_object_or_404(Usuario, pk=asignado_id) if asignado_id else None
+    ss.save(update_fields=['asignado_a'])
+    messages.success(request, 'Responsable actualizado.')
+    return redirect('portal_sst_detalle', sst_id=sst_id)

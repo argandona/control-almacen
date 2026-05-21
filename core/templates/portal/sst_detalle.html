@@ -1,0 +1,174 @@
+{% extends "portal/base.html" %}
+{% block title %}SST {{ sst.sst|default:sst.codigo }} — Encossa{% endblock %}
+{% block nav_sst %}active{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <a href="{% url 'portal_sst_lista' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <div>
+    <h4 class="mb-0">
+      {% if sst.sst %}SST {{ sst.sst }}{% else %}{{ sst.codigo }}{% endif %}
+      {% if sst.sst and sst.codigo %}
+        <small class="text-muted ms-2 fs-6">{{ sst.codigo }}</small>
+      {% endif %}
+    </h4>
+    <small class="text-muted">
+      {{ sst.empresa.nombre }} &nbsp;·&nbsp; {{ sst.distrito }}
+      {% if sst.actividad %}&nbsp;·&nbsp; {{ sst.actividad.nombre }}{% endif %}
+    </small>
+  </div>
+</div>
+
+<div class="row g-4">
+
+  <!-- ── Encargados ─────────────────────────────────────────────────────── -->
+  <div class="col-md-5">
+    <div class="card">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-person-badge me-1"></i>Encargados
+      </div>
+      <div class="card-body p-0">
+        {% if encargados %}
+        <table class="table table-sm mb-0">
+          <thead><tr>
+            <th>Usuario</th><th>Rol</th><th></th>
+          </tr></thead>
+          <tbody>
+            {% for enc in encargados %}
+            <tr>
+              <td>{{ enc.usuario.nombre }}</td>
+              <td><span class="badge bg-secondary">{{ enc.usuario.rol.descripcion }}</span></td>
+              <td class="text-end">
+                <form method="post" action="{% url 'portal_sst_quitar_encargado' sst.id_sst enc.pk %}"
+                      onsubmit="return confirm('¿Quitar a {{ enc.usuario.nombre }}?')">
+                  {% csrf_token %}
+                  <button class="btn btn-sm btn-outline-danger py-0">
+                    <i class="bi bi-x-lg"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted small p-3 mb-0">Sin encargados asignados.</p>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <form method="post" action="{% url 'portal_sst_agregar_encargado' sst.id_sst %}" class="d-flex gap-2">
+          {% csrf_token %}
+          <select name="usuario_id" class="form-select form-select-sm" required>
+            <option value="">— Selecciona usuario —</option>
+            {% for u in usuarios_disponibles %}
+            <option value="{{ u.id_usuario }}">{{ u.nombre }} ({{ u.rol.descripcion }})</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-sm btn-primary text-nowrap">
+            <i class="bi bi-plus-lg me-1"></i>Agregar
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Suministros ────────────────────────────────────────────────────── -->
+  <div class="col-md-7">
+    <div class="card">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-lightning-charge me-1"></i>Suministros
+      </div>
+      <div class="card-body p-0">
+        {% if sst_sums %}
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr>
+            <th>Suministro</th>
+            <th>Medidor</th>
+            <th>Estado</th>
+            <th>Responsable</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+            {% for ss in sst_sums %}
+            <tr>
+              <td class="fw-semibold">{{ ss.suministro.numero_suministro }}</td>
+              <td class="text-muted small">{{ ss.suministro.medidor|default:"—" }}</td>
+              <td>
+                <span class="badge
+                  {% if ss.suministro.estado == 'ejecutado' %}bg-success
+                  {% elif ss.suministro.estado == 'devuelto' %}bg-warning text-dark
+                  {% else %}bg-primary{% endif %}">
+                  {{ ss.suministro.estado }}
+                </span>
+              </td>
+              <td>
+                <form method="post" action="{% url 'portal_sst_cambiar_asignado' sst.id_sst ss.pk %}"
+                      class="d-flex gap-1">
+                  {% csrf_token %}
+                  <select name="asignado_id" class="form-select form-select-sm"
+                          onchange="this.form.submit()">
+                    <option value="">— Sin asignar —</option>
+                    {% for u in todos_usuarios %}
+                    <option value="{{ u.id_usuario }}"
+                      {% if ss.asignado_a_id == u.id_usuario %}selected{% endif %}>
+                      {{ u.nombre }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </form>
+              </td>
+              <td>
+                <form method="post" action="{% url 'portal_sst_quitar_suministro' sst.id_sst ss.pk %}"
+                      onsubmit="return confirm('¿Quitar suministro {{ ss.suministro.numero_suministro }}?')">
+                  {% csrf_token %}
+                  <button class="btn btn-sm btn-outline-danger py-0">
+                    <i class="bi bi-x-lg"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted small p-3 mb-0">Sin suministros asignados.</p>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <form method="post" action="{% url 'portal_sst_agregar_suministro' sst.id_sst %}"
+              class="row g-2 align-items-end">
+          {% csrf_token %}
+          <div class="col-sm-5">
+            <label class="form-label form-label-sm mb-1">Suministro</label>
+            <select name="suministro_id" class="form-select form-select-sm" required>
+              <option value="">— Selecciona —</option>
+              {% for s in suministros_disponibles %}
+              <option value="{{ s.id_suministro }}">
+                {{ s.numero_suministro }}{% if s.medidor %} · {{ s.medidor }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-sm-5">
+            <label class="form-label form-label-sm mb-1">Responsable (opcional)</label>
+            <select name="asignado_id" class="form-select form-select-sm">
+              <option value="">— Sin asignar —</option>
+              {% for u in todos_usuarios %}
+              <option value="{{ u.id_usuario }}">{{ u.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-sm-2">
+            <button class="btn btn-sm btn-primary w-100">
+              <i class="bi bi-plus-lg"></i>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
