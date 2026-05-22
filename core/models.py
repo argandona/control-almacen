@@ -563,6 +563,13 @@ class TipoTrabajoMaterial(models.Model):
         return f"{self.tipo_trabajo} – {self.material} x{self.cantidad}"
 
 
+class TipoTrabajoMaterialProxy(TipoTrabajo):
+    class Meta:
+        proxy = True
+        verbose_name        = "Tipo trabajo material"
+        verbose_name_plural = "Tipo trabajos materiales"
+
+
 class SuministroManoDeObra(models.Model):
     id_suministro_mano_de_obra = models.AutoField(primary_key=True)
     suministro   = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="mano_de_obra")

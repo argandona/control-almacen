@@ -19,7 +19,7 @@ from .models import (
     UploadConsumo, Consumo, DetalleConsumo,
     Inventario, DetalleInventario,
     Suministro, SSTSuministro, SuministroTipoTrabajo,
-    ManoDeObra, TipoTrabajo, SuministroManoDeObra, TipoTrabajoManoDeObra, TipoTrabajoMaterial,
+    ManoDeObra, TipoTrabajo, TipoTrabajoMaterialProxy, SuministroManoDeObra, TipoTrabajoManoDeObra, TipoTrabajoMaterial,
     SSTEncargado, Actividad,
     Recupero, SuministroRecupero,
     ConsumoMaterialSuministro,
@@ -612,14 +612,12 @@ class SuministroRecuperoAdmin(admin.ModelAdmin):
     list_select_related = True
 
 
-# ── TipoTrabajoMaterial ───────────────────────────────────────────────────────
-@admin.register(TipoTrabajoMaterial)
-class TipoTrabajoMaterialAdmin(admin.ModelAdmin):
-    list_display        = ["tipo_trabajo", "material", "cantidad"]
-    list_filter         = ["tipo_trabajo"]
-    search_fields       = ["tipo_trabajo__nombre", "material__matricula", "material__descripcion"]
-    autocomplete_fields = ["tipo_trabajo", "material"]
-    list_select_related = True
+# ── TipoTrabajoMaterial (proxy — misma UX que Tipo trabajos) ─────────────────
+@admin.register(TipoTrabajoMaterialProxy)
+class TipoTrabajoMaterialProxyAdmin(admin.ModelAdmin):
+    inlines       = [TipoTrabajoMaterialInline]
+    list_display  = ["nombre"]
+    search_fields = ["nombre"]
 
 
 # ── ConsumoMaterialSuministro ─────────────────────────────────────────────────
