@@ -573,9 +573,16 @@ class TipoTrabajoManoDeObraInline(admin.TabularInline):
     autocomplete_fields = ["mano_de_obra"]
 
 
+class TipoTrabajoMaterialInline(admin.TabularInline):
+    model  = TipoTrabajoMaterial
+    extra  = 1
+    fields = ["material", "cantidad"]
+    autocomplete_fields = ["material"]
+
+
 @admin.register(TipoTrabajo)
 class TipoTrabajoAdmin(admin.ModelAdmin):
-    inlines       = [TipoTrabajoManoDeObraInline]
+    inlines       = [TipoTrabajoManoDeObraInline, TipoTrabajoMaterialInline]
     list_display  = ["nombre"]
     search_fields = ["nombre"]
 
@@ -602,14 +609,6 @@ class RecuperoAdmin(ExcelImportMixin, admin.ModelAdmin):
 class SuministroRecuperoAdmin(admin.ModelAdmin):
     list_display        = ["suministro", "recupero", "cantidad", "fecha"]
     search_fields       = ["suministro__numero_suministro", "recupero__matricula"]
-    list_select_related = True
-
-
-# ── TipoTrabajoMaterial ───────────────────────────────────────────────────────
-@admin.register(TipoTrabajoMaterial)
-class TipoTrabajoMaterialAdmin(admin.ModelAdmin):
-    list_display        = ["tipo_trabajo", "material", "cantidad"]
-    search_fields       = ["tipo_trabajo__nombre", "material__matricula", "material__descripcion"]
     list_select_related = True
 
 
