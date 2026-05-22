@@ -480,7 +480,7 @@ class TipoTrabajoMaterialSerializer(serializers.ModelSerializer):
 
     class Meta:
         model  = TipoTrabajoMaterial
-        fields = ['id_material', 'matricula', 'descripcion', 'cantidad']
+        fields = ['id_material', 'matricula', 'descripcion']
 
 
 class TipoTrabajoSerializer(serializers.ModelSerializer):

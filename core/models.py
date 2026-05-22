@@ -555,12 +555,11 @@ class TipoTrabajoMaterial(models.Model):
     id_tipo_trabajo_material = models.AutoField(primary_key=True)
     tipo_trabajo = models.ForeignKey(TipoTrabajo, on_delete=models.PROTECT, related_name="materiales")
     material     = models.ForeignKey(Material,    on_delete=models.PROTECT, related_name="tipos_trabajo")
-    cantidad     = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     class Meta:
         db_table = "tipo_trabajo_material"
         unique_together = (("tipo_trabajo", "material"),)
     def __str__(self):
-        return f"{self.tipo_trabajo} – {self.material} x{self.cantidad}"
+        return f"{self.tipo_trabajo} – {self.material}"
 
 
 class TipoTrabajoMaterialProxy(TipoTrabajo):

@@ -576,7 +576,7 @@ class TipoTrabajoManoDeObraInline(admin.TabularInline):
 class TipoTrabajoMaterialInline(admin.TabularInline):
     model  = TipoTrabajoMaterial
     extra  = 1
-    fields = ["material", "cantidad"]
+    fields = ["material"]
     autocomplete_fields = ["material"]
 
 
