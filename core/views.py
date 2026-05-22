@@ -16,7 +16,7 @@ from .models import (
     Inventario, DetalleInventario,
     SSTEncargado, SSTSuministro, Suministro, TipoTrabajo, SuministroTipoTrabajo,
     SuministroManoDeObra, TipoTrabajoManoDeObra, Recupero, SuministroRecupero,
-    LiquidacionSuministro, LiquidacionPartida,
+    LiquidacionSuministro, LiquidacionPartida, ConsumoMaterialSuministro,
 )
 from .serializers import (
     EmpresaSerializer, RolSerializer,
@@ -35,6 +35,7 @@ from .serializers import (
     SuministroSerializer, TipoTrabajoSerializer,
     SuministroManoDeObraSerializer, RecuperoSerializer, SuministroRecuperoSerializer,
     LiquidacionSuministroSerializer, LiquidacionSuministroCreateSerializer,
+    ConsumoMaterialSuministroSerializer,
 )
 
 
@@ -1033,7 +1034,7 @@ class SuministroViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=['get'])
     def tipos_trabajo(self, request, pk=None):
         """GET /api/suministros/<id>/tipos_trabajo/ — todos los tipos con sus partidas."""
-        tipos = TipoTrabajo.objects.prefetch_related('partidas__mano_de_obra').order_by('nombre')
+        tipos = TipoTrabajo.objects.prefetch_related('partidas__mano_de_obra', 'materiales__material').order_by('nombre')
         return Response(TipoTrabajoSerializer(tipos, many=True).data)
 
     @action(detail=True, methods=['get'])
@@ -1042,6 +1043,23 @@ class SuministroViewSet(viewsets.ReadOnlyModelViewSet):
         suministro = self.get_object()
         qs = SuministroRecupero.objects.filter(suministro=suministro).select_related('recupero')
         return Response(SuministroRecuperoSerializer(qs, many=True).data)
+
+    @action(detail=True, methods=['get'])
+    def stock_camion_usuario(self, request, pk=None):
+        """GET /api/suministros/<id>/stock_camion_usuario/ — materiales disponibles en el camión activo del usuario."""
+        self.get_object()
+        camion = UsuarioCamion.camion_activo_de_usuario(request.user)
+        if camion is None:
+            return Response({'detail': 'No tenés un camión activo asignado.'}, status=400)
+        qs = StockCamion.objects.filter(camion=camion, cantidad__gt=0).select_related('material')
+        return Response(StockCamionSerializer(qs, many=True).data)
+
+    @action(detail=True, methods=['get'])
+    def materiales_consumidos(self, request, pk=None):
+        """GET /api/suministros/<id>/materiales_consumidos/ — historial de consumos de material del suministro."""
+        suministro = self.get_object()
+        qs = ConsumoMaterialSuministro.objects.filter(suministro=suministro).select_related('material', 'usuario', 'liquidacion')
+        return Response(ConsumoMaterialSuministroSerializer(qs, many=True).data)
 
 
 # ── Liquidacion Suministro ────────────────────────────────────────────────────
@@ -1056,7 +1074,7 @@ class LiquidacionViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = (LiquidacionSuministro.objects
               .select_related('suministro', 'usuario', 'tipo_trabajo')
-              .prefetch_related('partidas__mano_de_obra')
+              .prefetch_related('partidas__mano_de_obra', 'materiales_consumidos__material')
               .order_by('-fecha'))
         suministro = self.request.query_params.get('suministro')
         if suministro:

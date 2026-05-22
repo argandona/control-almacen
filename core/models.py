@@ -551,6 +551,18 @@ class TipoTrabajoManoDeObra(models.Model):
         return f"{self.tipo_trabajo} – {self.mano_de_obra}"
 
 
+class TipoTrabajoMaterial(models.Model):
+    id_tipo_trabajo_material = models.AutoField(primary_key=True)
+    tipo_trabajo = models.ForeignKey(TipoTrabajo, on_delete=models.PROTECT, related_name="materiales")
+    material     = models.ForeignKey(Material,    on_delete=models.PROTECT, related_name="tipos_trabajo")
+    cantidad     = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    class Meta:
+        db_table = "tipo_trabajo_material"
+        unique_together = (("tipo_trabajo", "material"),)
+    def __str__(self):
+        return f"{self.tipo_trabajo} – {self.material} x{self.cantidad}"
+
+
 class SuministroManoDeObra(models.Model):
     id_suministro_mano_de_obra = models.AutoField(primary_key=True)
     suministro   = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="mano_de_obra")
@@ -605,3 +617,18 @@ class SuministroRecupero(models.Model):
         db_table = "suministro_recupero"
     def __str__(self):
         return f"{self.suministro} – {self.recupero} x{self.cantidad}"
+
+
+class ConsumoMaterialSuministro(models.Model):
+    id_consumo_material = models.AutoField(primary_key=True)
+    liquidacion = models.ForeignKey(LiquidacionSuministro, on_delete=models.CASCADE,
+                                    related_name="materiales_consumidos", null=True, blank=True)
+    suministro  = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="consumos_material")
+    material    = models.ForeignKey(Material,   on_delete=models.PROTECT, related_name="consumos_suministro")
+    usuario     = models.ForeignKey(Usuario,    on_delete=models.PROTECT, related_name="consumos_suministro")
+    cantidad    = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    fecha       = models.DateField(auto_now_add=True)
+    class Meta:
+        db_table = "consumo_material_suministro"
+    def __str__(self):
+        return f"{self.suministro} – {self.material} x{self.cantidad}"

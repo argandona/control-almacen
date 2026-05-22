@@ -11,8 +11,8 @@ from .models import (
     UploadConsumo, Consumo, DetalleConsumo,
     Inventario, DetalleInventario,
     Suministro, ManoDeObra, TipoTrabajo, SuministroTipoTrabajo,
-    SuministroManoDeObra, TipoTrabajoManoDeObra, Recupero, SuministroRecupero,
-    LiquidacionSuministro, LiquidacionPartida,
+    SuministroManoDeObra, TipoTrabajoManoDeObra, TipoTrabajoMaterial, Recupero, SuministroRecupero,
+    LiquidacionSuministro, LiquidacionPartida, ConsumoMaterialSuministro,
 )
 
 
@@ -473,12 +473,23 @@ class TipoTrabajoPartidaSerializer(serializers.ModelSerializer):
         fields = ['id_mano_de_obra', 'partida', 'descripcion', 'precio']
 
 
+class TipoTrabajoMaterialSerializer(serializers.ModelSerializer):
+    id_material = serializers.IntegerField(source='material.id_material', read_only=True)
+    matricula   = serializers.CharField(source='material.matricula',      read_only=True)
+    descripcion = serializers.CharField(source='material.descripcion',    read_only=True)
+
+    class Meta:
+        model  = TipoTrabajoMaterial
+        fields = ['id_material', 'matricula', 'descripcion', 'cantidad']
+
+
 class TipoTrabajoSerializer(serializers.ModelSerializer):
-    partidas = TipoTrabajoPartidaSerializer(many=True, read_only=True)
+    partidas   = TipoTrabajoPartidaSerializer(many=True, read_only=True)
+    materiales = TipoTrabajoMaterialSerializer(many=True, read_only=True)
 
     class Meta:
         model  = TipoTrabajo
-        fields = ['id_tipo_trabajo', 'nombre', 'partidas']
+        fields = ['id_tipo_trabajo', 'nombre', 'partidas', 'materiales']
 
 
 # ── SuministroManoDeObra ─────────────────────────────────────────────────────
@@ -517,22 +528,39 @@ class LiquidacionPartidaSerializer(serializers.ModelSerializer):
         model  = LiquidacionPartida
         fields = ['id_liquidacion_partida', 'mano_de_obra', 'partida', 'descripcion', 'cantidad']
 
+
+class ConsumoMaterialSuministroSerializer(serializers.ModelSerializer):
+    matricula   = serializers.CharField(source='material.matricula',   read_only=True)
+    descripcion = serializers.CharField(source='material.descripcion', read_only=True)
+    class Meta:
+        model  = ConsumoMaterialSuministro
+        fields = ['id_consumo_material', 'material', 'matricula', 'descripcion', 'cantidad', 'fecha']
+
+
 class LiquidacionSuministroSerializer(serializers.ModelSerializer):
-    numero_suministro  = serializers.CharField(source='suministro.numero_suministro', read_only=True)
-    usuario_nombre     = serializers.CharField(source='usuario.nombre',               read_only=True)
-    tipo_trabajo_nombre = serializers.CharField(source='tipo_trabajo.nombre',         read_only=True)
-    partidas           = LiquidacionPartidaSerializer(many=True, read_only=True)
+    numero_suministro   = serializers.CharField(source='suministro.numero_suministro', read_only=True)
+    usuario_nombre      = serializers.CharField(source='usuario.nombre',               read_only=True)
+    tipo_trabajo_nombre = serializers.CharField(source='tipo_trabajo.nombre',          read_only=True)
+    partidas            = LiquidacionPartidaSerializer(many=True, read_only=True)
+    materiales          = ConsumoMaterialSuministroSerializer(source='materiales_consumidos', many=True, read_only=True)
     class Meta:
         model  = LiquidacionSuministro
         fields = [
             'id_liquidacion', 'suministro', 'numero_suministro',
             'usuario', 'usuario_nombre', 'tipo_trabajo', 'tipo_trabajo_nombre',
-            'fecha', 'observacion', 'partidas',
+            'fecha', 'observacion', 'partidas', 'materiales',
         ]
+
 
 class LiquidacionPartidaCreateSerializer(serializers.Serializer):
     mano_de_obra = serializers.PrimaryKeyRelatedField(queryset=ManoDeObra.objects.all())
     cantidad     = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+
+class ConsumoMaterialCreateSerializer(serializers.Serializer):
+    material = serializers.PrimaryKeyRelatedField(queryset=Material.objects.all())
+    cantidad = serializers.DecimalField(max_digits=10, decimal_places=2)
+
 
 class LiquidacionSuministroCreateSerializer(serializers.Serializer):
     suministro   = serializers.PrimaryKeyRelatedField(queryset=Suministro.objects.all())
@@ -540,15 +568,45 @@ class LiquidacionSuministroCreateSerializer(serializers.Serializer):
     tipo_trabajo = serializers.PrimaryKeyRelatedField(queryset=TipoTrabajo.objects.all())
     observacion  = serializers.CharField(required=False, allow_blank=True, default='')
     partidas     = LiquidacionPartidaCreateSerializer(many=True)
+    materiales   = ConsumoMaterialCreateSerializer(many=True, required=False, default=list)
 
     def create(self, validated_data):
         from django.db import transaction
-        partidas_data = validated_data.pop('partidas')
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from .models import UsuarioCamion, StockCamion
+        partidas_data   = validated_data.pop('partidas')
+        materiales_data = validated_data.pop('materiales', [])
+        usuario         = validated_data['usuario']
+        suministro      = validated_data['suministro']
         with transaction.atomic():
             liq = LiquidacionSuministro.objects.create(**validated_data)
             for p in partidas_data:
                 LiquidacionPartida.objects.create(liquidacion=liq, **p)
-            # Cambiar estado del suministro a ejecutado
-            liq.suministro.estado = 'ejecutado'
-            liq.suministro.save(update_fields=['estado'])
+            if materiales_data:
+                camion = UsuarioCamion.camion_activo_de_usuario(usuario)
+                if camion is None:
+                    raise serializers.ValidationError(
+                        {'materiales': 'El usuario no tiene un camión activo asignado para descontar stock.'}
+                    )
+                for m in materiales_data:
+                    try:
+                        stock = StockCamion.objects.select_for_update().get(
+                            camion=camion, material=m['material']
+                        )
+                        stock.descontar(int(m['cantidad']))
+                    except StockCamion.DoesNotExist:
+                        raise serializers.ValidationError(
+                            {'materiales': f'El material {m["material"]} no está en el camión {camion}.'}
+                        )
+                    except DjangoValidationError as e:
+                        raise serializers.ValidationError({'materiales': e.message})
+                    ConsumoMaterialSuministro.objects.create(
+                        liquidacion=liq,
+                        suministro=suministro,
+                        usuario=usuario,
+                        material=m['material'],
+                        cantidad=m['cantidad'],
+                    )
+            suministro.estado = 'ejecutado'
+            suministro.save(update_fields=['estado'])
         return liq

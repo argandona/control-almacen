@@ -19,9 +19,10 @@ from .models import (
     UploadConsumo, Consumo, DetalleConsumo,
     Inventario, DetalleInventario,
     Suministro, SSTSuministro, SuministroTipoTrabajo,
-    ManoDeObra, TipoTrabajo, SuministroManoDeObra, TipoTrabajoManoDeObra,
+    ManoDeObra, TipoTrabajo, SuministroManoDeObra, TipoTrabajoManoDeObra, TipoTrabajoMaterial,
     SSTEncargado, Actividad,
     Recupero, SuministroRecupero,
+    ConsumoMaterialSuministro,
 )
 
 
@@ -601,4 +602,21 @@ class RecuperoAdmin(ExcelImportMixin, admin.ModelAdmin):
 class SuministroRecuperoAdmin(admin.ModelAdmin):
     list_display        = ["suministro", "recupero", "cantidad", "fecha"]
     search_fields       = ["suministro__numero_suministro", "recupero__matricula"]
+    list_select_related = True
+
+
+# ── TipoTrabajoMaterial ───────────────────────────────────────────────────────
+@admin.register(TipoTrabajoMaterial)
+class TipoTrabajoMaterialAdmin(admin.ModelAdmin):
+    list_display        = ["tipo_trabajo", "material", "cantidad"]
+    search_fields       = ["tipo_trabajo__nombre", "material__matricula", "material__descripcion"]
+    list_select_related = True
+
+
+# ── ConsumoMaterialSuministro ─────────────────────────────────────────────────
+@admin.register(ConsumoMaterialSuministro)
+class ConsumoMaterialSuministroAdmin(admin.ModelAdmin):
+    list_display        = ["liquidacion", "suministro", "material", "cantidad", "usuario", "fecha"]
+    list_filter         = ["fecha"]
+    search_fields       = ["suministro__numero_suministro", "material__matricula", "material__descripcion"]
     list_select_related = True
