@@ -203,7 +203,7 @@ class StockCamion(models.Model):
     id_stock = models.AutoField(primary_key=True)
     camion   = models.ForeignKey(Camion,   on_delete=models.PROTECT, related_name="stocks")
     material = models.ForeignKey(Material, on_delete=models.PROTECT, related_name="stocks")
-    cantidad = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    cantidad = models.DecimalField(max_digits=12, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     class Meta:
         db_table = "stock_camion"
         unique_together = ("camion", "material")

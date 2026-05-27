@@ -613,7 +613,7 @@ class LiquidacionSuministroCreateSerializer(serializers.Serializer):
                         stock = StockCamion.objects.select_for_update().get(
                             camion=camion, material=m['material']
                         )
-                        stock.descontar(int(m['cantidad']))
+                        stock.descontar(m['cantidad'])
                     except StockCamion.DoesNotExist:
                         raise serializers.ValidationError(
                             {'materiales': f'El material {m["material"]} no está en el camión {camion}.'}
