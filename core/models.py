@@ -562,6 +562,16 @@ class TipoTrabajoMaterial(models.Model):
         return f"{self.tipo_trabajo} – {self.material}"
 
 
+class ActividadTipoTrabajo(models.Model):
+    actividad    = models.ForeignKey(Actividad,   on_delete=models.PROTECT, related_name='tipos_trabajo')
+    tipo_trabajo = models.ForeignKey(TipoTrabajo, on_delete=models.PROTECT, related_name='actividades')
+    class Meta:
+        db_table        = "actividad_tipo_trabajo"
+        unique_together = (("actividad", "tipo_trabajo"),)
+    def __str__(self):
+        return f"{self.actividad} → {self.tipo_trabajo}"
+
+
 class TipoTrabajoMaterialProxy(TipoTrabajo):
     class Meta:
         proxy = True
@@ -581,16 +591,19 @@ class SuministroManoDeObra(models.Model):
 
 
 class LiquidacionSuministro(models.Model):
-    id_liquidacion = models.AutoField(primary_key=True)
-    suministro     = models.ForeignKey(Suministro,  on_delete=models.PROTECT, related_name="liquidaciones")
-    usuario        = models.ForeignKey(Usuario,     on_delete=models.PROTECT, related_name="liquidaciones")
-    tipo_trabajo   = models.ForeignKey(TipoTrabajo, on_delete=models.PROTECT, related_name="liquidaciones")
-    fecha          = models.DateField(auto_now_add=True)
-    observacion    = models.TextField(blank=True)
+    id_liquidacion      = models.AutoField(primary_key=True)
+    suministro          = models.ForeignKey(Suministro,  on_delete=models.PROTECT, related_name="liquidaciones", null=True, blank=True)
+    suministro_externo  = models.CharField(max_length=20, blank=True)   # numero_suministro de Render
+    sst_externo         = models.CharField(max_length=20, blank=True)   # sst_codigo de Render
+    usuario             = models.ForeignKey(Usuario,     on_delete=models.PROTECT, related_name="liquidaciones")
+    tipo_trabajo        = models.ForeignKey(TipoTrabajo, on_delete=models.PROTECT, related_name="liquidaciones")
+    fecha               = models.DateField(auto_now_add=True)
+    observacion         = models.TextField(blank=True)
     class Meta:
         db_table = "liquidacion_suministro"
     def __str__(self):
-        return f"Liq #{self.id_liquidacion} – {self.suministro}"
+        ref = self.suministro or self.suministro_externo or self.id_liquidacion
+        return f"Liq #{self.id_liquidacion} – {ref}"
 
 
 class LiquidacionPartida(models.Model):
@@ -627,13 +640,14 @@ class SuministroRecupero(models.Model):
 
 class ConsumoMaterialSuministro(models.Model):
     id_consumo_material = models.AutoField(primary_key=True)
-    liquidacion = models.ForeignKey(LiquidacionSuministro, on_delete=models.CASCADE,
-                                    related_name="materiales_consumidos", null=True, blank=True)
-    suministro  = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="consumos_material")
-    material    = models.ForeignKey(Material,   on_delete=models.PROTECT, related_name="consumos_suministro")
-    usuario     = models.ForeignKey(Usuario,    on_delete=models.PROTECT, related_name="consumos_suministro")
-    cantidad    = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
-    fecha       = models.DateField(auto_now_add=True)
+    liquidacion         = models.ForeignKey(LiquidacionSuministro, on_delete=models.CASCADE,
+                                            related_name="materiales_consumidos", null=True, blank=True)
+    suministro          = models.ForeignKey(Suministro, on_delete=models.PROTECT, related_name="consumos_material", null=True, blank=True)
+    suministro_externo  = models.CharField(max_length=20, blank=True)
+    material            = models.ForeignKey(Material,   on_delete=models.PROTECT, related_name="consumos_suministro")
+    usuario             = models.ForeignKey(Usuario,    on_delete=models.PROTECT, related_name="consumos_suministro")
+    cantidad            = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    fecha               = models.DateField(auto_now_add=True)
     class Meta:
         db_table = "consumo_material_suministro"
     def __str__(self):

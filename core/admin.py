@@ -20,7 +20,7 @@ from .models import (
     Inventario, DetalleInventario,
     Suministro, SSTSuministro, SuministroTipoTrabajo,
     ManoDeObra, TipoTrabajo, TipoTrabajoMaterialProxy, SuministroManoDeObra, TipoTrabajoManoDeObra, TipoTrabajoMaterial,
-    SSTEncargado, Actividad,
+    SSTEncargado, Actividad, ActividadTipoTrabajo,
     Recupero, SuministroRecupero,
     ConsumoMaterialSuministro,
 )
@@ -559,10 +559,24 @@ class InventarioAdmin(admin.ModelAdmin):
 
 
 # ── Actividad ─────────────────────────────────────────────────────────────────
+class ActividadTipoTrabajoInline(admin.TabularInline):
+    model  = ActividadTipoTrabajo
+    extra  = 1
+    fields = ["tipo_trabajo"]
+
+
 @admin.register(Actividad)
 class ActividadAdmin(admin.ModelAdmin):
+    inlines       = [ActividadTipoTrabajoInline]
     list_display  = ["nombre"]
     search_fields = ["nombre"]
+
+
+@admin.register(ActividadTipoTrabajo)
+class ActividadTipoTrabajoAdmin(admin.ModelAdmin):
+    list_display  = ["actividad", "tipo_trabajo"]
+    list_filter   = ["actividad"]
+    search_fields = ["actividad__nombre", "tipo_trabajo__nombre"]
 
 
 # ── TipoTrabajo ───────────────────────────────────────────────────────────────

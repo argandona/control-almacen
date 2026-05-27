@@ -538,15 +538,23 @@ class ConsumoMaterialSuministroSerializer(serializers.ModelSerializer):
 
 
 class LiquidacionSuministroSerializer(serializers.ModelSerializer):
-    numero_suministro   = serializers.CharField(source='suministro.numero_suministro', read_only=True)
-    usuario_nombre      = serializers.CharField(source='usuario.nombre',               read_only=True)
-    tipo_trabajo_nombre = serializers.CharField(source='tipo_trabajo.nombre',          read_only=True)
+    numero_suministro   = serializers.SerializerMethodField()
+    usuario_nombre      = serializers.CharField(source='usuario.nombre',      read_only=True)
+    tipo_trabajo_nombre = serializers.CharField(source='tipo_trabajo.nombre', read_only=True)
     partidas            = LiquidacionPartidaSerializer(many=True, read_only=True)
     materiales          = ConsumoMaterialSuministroSerializer(source='materiales_consumidos', many=True, read_only=True)
+
+    def get_numero_suministro(self, obj):
+        if obj.suministro_id:
+            return obj.suministro.numero_suministro
+        return obj.suministro_externo or ''
+
     class Meta:
         model  = LiquidacionSuministro
         fields = [
-            'id_liquidacion', 'suministro', 'numero_suministro',
+            'id_liquidacion',
+            'suministro', 'numero_suministro',
+            'suministro_externo', 'sst_externo',
             'usuario', 'usuario_nombre', 'tipo_trabajo', 'tipo_trabajo_nombre',
             'fecha', 'observacion', 'partidas', 'materiales',
         ]
@@ -563,21 +571,33 @@ class ConsumoMaterialCreateSerializer(serializers.Serializer):
 
 
 class LiquidacionSuministroCreateSerializer(serializers.Serializer):
-    suministro   = serializers.PrimaryKeyRelatedField(queryset=Suministro.objects.all())
-    usuario      = serializers.PrimaryKeyRelatedField(queryset=Usuario.objects.all())
-    tipo_trabajo = serializers.PrimaryKeyRelatedField(queryset=TipoTrabajo.objects.all())
-    observacion  = serializers.CharField(required=False, allow_blank=True, default='')
-    partidas     = LiquidacionPartidaCreateSerializer(many=True)
-    materiales   = ConsumoMaterialCreateSerializer(many=True, required=False, default=list)
+    # Suministro local (opcional si se usa suministro externo)
+    suministro          = serializers.PrimaryKeyRelatedField(queryset=Suministro.objects.all(), required=False, allow_null=True)
+    # Suministro externo (del proyecto Render)
+    suministro_externo  = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
+    sst_externo         = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
+    usuario             = serializers.PrimaryKeyRelatedField(queryset=Usuario.objects.all())
+    tipo_trabajo        = serializers.PrimaryKeyRelatedField(queryset=TipoTrabajo.objects.all())
+    observacion         = serializers.CharField(required=False, allow_blank=True, default='')
+    partidas            = LiquidacionPartidaCreateSerializer(many=True)
+    materiales          = ConsumoMaterialCreateSerializer(many=True, required=False, default=list)
+
+    def validate(self, data):
+        if not data.get('suministro') and not data.get('suministro_externo'):
+            raise serializers.ValidationError(
+                'Debe indicar suministro (local) o suministro_externo (Render).'
+            )
+        return data
 
     def create(self, validated_data):
         from django.db import transaction
         from django.core.exceptions import ValidationError as DjangoValidationError
         from .models import UsuarioCamion, StockCamion
-        partidas_data   = validated_data.pop('partidas')
-        materiales_data = validated_data.pop('materiales', [])
-        usuario         = validated_data['usuario']
-        suministro      = validated_data['suministro']
+        partidas_data      = validated_data.pop('partidas')
+        materiales_data    = validated_data.pop('materiales', [])
+        usuario            = validated_data['usuario']
+        suministro_local   = validated_data.get('suministro')
+        suministro_externo = validated_data.get('suministro_externo', '')
         with transaction.atomic():
             liq = LiquidacionSuministro.objects.create(**validated_data)
             for p in partidas_data:
@@ -602,11 +622,14 @@ class LiquidacionSuministroCreateSerializer(serializers.Serializer):
                         raise serializers.ValidationError({'materiales': e.message})
                     ConsumoMaterialSuministro.objects.create(
                         liquidacion=liq,
-                        suministro=suministro,
+                        suministro=suministro_local,
+                        suministro_externo=suministro_externo,
                         usuario=usuario,
                         material=m['material'],
                         cantidad=m['cantidad'],
                     )
-            suministro.estado = 'ejecutado'
-            suministro.save(update_fields=['estado'])
+            # Solo actualizar estado si es suministro local
+            if suministro_local:
+                suministro_local.estado = 'ejecutado'
+                suministro_local.save(update_fields=['estado'])
         return liq

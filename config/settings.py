@@ -71,6 +71,11 @@ EMAIL_HOST_USER     = config('EMAIL_HOST_USER',     default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 DEFAULT_FROM_EMAIL  = config('DEFAULT_FROM_EMAIL',  default=EMAIL_HOST_USER)
 
+# ── API externa (proyecto Render) ─────────────────────────────────────────────
+RENDER_API_URL      = config('RENDER_API_URL',      default='https://casa2-03fr.onrender.com')
+RENDER_API_USERNAME = config('RENDER_API_USERNAME', default='alexander')
+RENDER_API_PASSWORD = config('RENDER_API_PASSWORD', default='123')
+
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [

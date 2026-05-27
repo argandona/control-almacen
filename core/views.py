@@ -1,5 +1,7 @@
 import datetime
 import openpyxl
+import requests as _requests
+from django.conf import settings as _settings
 from django.utils import timezone
 from django.db import transaction
 from rest_framework import viewsets, status, permissions
@@ -8,6 +10,7 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
 from .models import (
+    ActividadTipoTrabajo, Actividad,
     Empresa, Rol, Usuario, Camion, UsuarioCamion, SST,
     Material, StockCamion, Almacen, StockAlmacen, Proveedor,
     IngresoTecsur, DevolucionTecsur, MaterialMalogrado, TransferenciaAlmacen,
@@ -37,6 +40,53 @@ from .serializers import (
     LiquidacionSuministroSerializer, LiquidacionSuministroCreateSerializer,
     ConsumoMaterialSuministroSerializer,
 )
+
+
+# ── Helper: token del proyecto Render ────────────────────────────────────────
+def _render_token():
+    """Obtiene un access token fresco del proyecto en Render."""
+    base = _settings.RENDER_API_URL.rstrip('/')
+    resp = _requests.post(
+        f'{base}/api/token/',
+        json={
+            'username': _settings.RENDER_API_USERNAME,
+            'password': _settings.RENDER_API_PASSWORD,
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()['access']
+
+
+def _render_suministros(nombre_usuario, fecha_desde, fecha_hasta):
+    """
+    Llama a /api/suministros/ del proyecto Render filtrando por usuario,
+    rango de semana, actividad asignada y estado ASIGNADO.
+    """
+    base  = _settings.RENDER_API_URL.rstrip('/')
+    token = _render_token()
+    resp  = _requests.get(
+        f'{base}/api/suministros/',
+        headers={'Authorization': f'Bearer {token}'},
+        params={
+            'ejecutado_por': nombre_usuario,
+            'fecha_desde':   str(fecha_desde),
+            'fecha_hasta':   str(fecha_hasta),
+            'estado':        'ASIGNADO',
+            'con_actividad': '1',
+        },
+        timeout=20,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    # Doble filtro local como salvaguarda (mientras Render no tenga los filtros desplegados)
+    return [
+        s for s in data
+        if s.get('actividad')
+        and (s.get('estado_suministro') or {}).get('estado_suministro', '').upper() == 'ASIGNADO'
+        and nombre_usuario.lower() in (s.get('ejecutado_por') or '').lower()
+        and str(fecha_desde) <= (s.get('fecha_programada') or '') <= str(fecha_hasta)
+    ]
 
 
 # ── Helper: retorna queryset filtrado por empresa del usuario autenticado ──
@@ -1086,3 +1136,92 @@ class LiquidacionViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         liq = serializer.save()
         return Response(LiquidacionSuministroSerializer(liq).data, status=201)
+
+    @action(detail=False, methods=['get'])
+    def semana_trabajo(self, request):
+        """
+        GET /api/liquidaciones/semana_trabajo/?usuario=<id>
+
+        Retorna los suministros del proyecto Render para la semana actual
+        (lunes–domingo) que tengan ejecutado_por = nombre del usuario local.
+        Agrupa por día e incluye los TipoTrabajo disponibles según la Actividad
+        de cada suministro.
+        """
+        usuario_id = request.query_params.get('usuario')
+        if not usuario_id:
+            return Response({'detail': 'Parámetro usuario requerido.'}, status=400)
+
+        try:
+            usuario = Usuario.objects.get(pk=usuario_id)
+        except Usuario.DoesNotExist:
+            return Response({'detail': 'Usuario no encontrado.'}, status=404)
+
+        # Rango lunes–domingo de la semana actual
+        hoy        = datetime.date.today()
+        lunes      = hoy - datetime.timedelta(days=hoy.weekday())
+        domingo    = lunes + datetime.timedelta(days=6)
+
+        # Mapa actividad_nombre → lista de TipoTrabajo (local)
+        atts = (ActividadTipoTrabajo.objects
+                .select_related('actividad', 'tipo_trabajo')
+                .prefetch_related('tipo_trabajo__partidas__mano_de_obra',
+                                  'tipo_trabajo__materiales__material'))
+        actividad_map = {}
+        for att in atts:
+            nombre = att.actividad.nombre
+            if nombre not in actividad_map:
+                actividad_map[nombre] = []
+            actividad_map[nombre].append(att.tipo_trabajo)
+
+        # Llamar al proyecto Render
+        try:
+            suministros = _render_suministros(usuario.nombre, lunes, domingo)
+        except Exception as exc:
+            return Response({'detail': f'Error al consultar Render: {exc}'}, status=502)
+
+        # Agrupar por día
+        dias = {}
+        for s in suministros:
+            fecha_str = s.get('fecha_programada') or ''
+            if fecha_str not in dias:
+                dias[fecha_str] = []
+
+            # Enriquecer con tipos de trabajo según actividad
+            actividad_data  = s.get('actividad') or {}
+            actividad_nombre = actividad_data.get('nombre_actividad', '')
+            tipos_trabajo = []
+            for tt in actividad_map.get(actividad_nombre, []):
+                tipos_trabajo.append({
+                    'id_tipo_trabajo': tt.id_tipo_trabajo,
+                    'nombre':          tt.nombre,
+                    'partidas': [
+                        {
+                            'id_mano_de_obra': p.mano_de_obra.id_mano_de_obra,
+                            'partida':         p.mano_de_obra.partida,
+                            'descripcion':     p.mano_de_obra.descripcion,
+                            'precio':          str(p.mano_de_obra.precio),
+                        }
+                        for p in tt.partidas.all()
+                    ],
+                    'materiales': [
+                        {
+                            'id_material': m.material.id_material,
+                            'matricula':   m.material.matricula,
+                            'descripcion': m.material.descripcion,
+                        }
+                        for m in tt.materiales.all()
+                    ],
+                })
+
+            dias[fecha_str].append({**s, 'tipos_trabajo_disponibles': tipos_trabajo})
+
+        # Convertir a lista ordenada por fecha
+        resultado = [
+            {'fecha': fecha, 'suministros': items}
+            for fecha, items in sorted(dias.items())
+        ]
+        return Response({
+            'semana':    {'desde': str(lunes), 'hasta': str(domingo)},
+            'usuario':   {'id': usuario.id_usuario, 'nombre': usuario.nombre},
+            'dias':      resultado,
+        })
