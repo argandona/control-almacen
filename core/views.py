@@ -20,6 +20,7 @@ from .models import (
     SSTEncargado, SSTSuministro, Suministro, TipoTrabajo, SuministroTipoTrabajo,
     SuministroManoDeObra, TipoTrabajoManoDeObra, Recupero, SuministroRecupero,
     LiquidacionSuministro, LiquidacionPartida, ConsumoMaterialSuministro,
+    PlanoSST,
 )
 from .serializers import (
     EmpresaSerializer, RolSerializer,
@@ -39,6 +40,7 @@ from .serializers import (
     SuministroManoDeObraSerializer, RecuperoSerializer, SuministroRecuperoSerializer,
     LiquidacionSuministroSerializer, LiquidacionSuministroCreateSerializer,
     ConsumoMaterialSuministroSerializer,
+    PlanoSSTSerializer,
 )
 
 
@@ -1224,4 +1226,114 @@ class LiquidacionViewSet(viewsets.ModelViewSet):
             'semana':    {'desde': str(lunes), 'hasta': str(domingo)},
             'usuario':   {'id': usuario.id_usuario, 'nombre': usuario.nombre},
             'dias':      resultado,
+        })
+
+
+# ── PlanoSST ─────────────────────────────────────────────────────────────────
+class PlanoSSTViewSet(viewsets.ModelViewSet):
+    """Plano/croquis editable por SST.
+
+    - POST   /api/planos/                  → upsert por (empresa, sst_codigo)
+    - GET    /api/planos/?sst_codigo=XXX   → plano de ese SST (o elementos vacíos)
+    - GET    /api/planos/semana_sst/?usuario=<id>
+                                           → SSTs de la semana agrupados por fecha
+    """
+    serializer_class   = PlanoSSTSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = qs_empresa(PlanoSST.objects.select_related('empresa', 'usuario'), self.request)
+        sst_codigo = self.request.query_params.get('sst_codigo')
+        if sst_codigo:
+            qs = qs.filter(sst_codigo=sst_codigo)
+        return qs
+
+    def _empresa_del_request(self):
+        usuario = Usuario.objects.get(pk=self.request.user.id_usuario)
+        return usuario.empresa_id
+
+    def create(self, request, *args, **kwargs):
+        """Upsert: si ya existe el plano de ese SST en la empresa, lo actualiza."""
+        empresa_id = self._empresa_del_request()
+        sst_codigo = request.data.get('sst_codigo')
+        if not sst_codigo:
+            return Response({'detail': 'sst_codigo requerido.'}, status=400)
+        if not empresa_id:
+            return Response({'detail': 'El usuario no tiene empresa asignada.'}, status=400)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        plano, _ = PlanoSST.objects.update_or_create(
+            empresa_id=empresa_id,
+            sst_codigo=sst_codigo,
+            defaults={
+                'usuario':   serializer.validated_data['usuario'],
+                'elementos': serializer.validated_data.get('elementos', []),
+            },
+        )
+        return Response(self.get_serializer(plano).data, status=200)
+
+    @action(detail=False, methods=['get'])
+    def semana_sst(self, request):
+        """
+        GET /api/planos/semana_sst/?usuario=<id>
+
+        Lista los SSTs programados para el usuario en la semana actual
+        (lunes–domingo), agrupados por fecha de programación y deduplicados por
+        código de SST, marcando cuáles ya tienen plano.
+        """
+        usuario_id = request.query_params.get('usuario')
+        if not usuario_id:
+            return Response({'detail': 'Parámetro usuario requerido.'}, status=400)
+
+        try:
+            usuario = Usuario.objects.get(pk=usuario_id)
+        except Usuario.DoesNotExist:
+            return Response({'detail': 'Usuario no encontrado.'}, status=404)
+
+        hoy     = datetime.date.today()
+        lunes   = hoy - datetime.timedelta(days=hoy.weekday())
+        domingo = lunes + datetime.timedelta(days=6)
+
+        try:
+            suministros = _render_suministros(usuario.nombre, lunes, domingo)
+        except Exception as exc:
+            return Response({'detail': f'Error al consultar Render: {exc}'}, status=502)
+
+        # Códigos de SST que ya tienen plano en la empresa del usuario
+        con_plano = set(
+            PlanoSST.objects
+            .filter(empresa_id=usuario.empresa_id)
+            .values_list('sst_codigo', flat=True)
+        )
+
+        # Agrupar por fecha y deduplicar SSTs dentro de cada día
+        dias = {}
+        vistos = {}  # fecha -> set(sst_codigo)
+        for s in suministros:
+            fecha_str  = s.get('fecha_programada') or ''
+            sst_codigo = s.get('sst_codigo') or ''
+            if not sst_codigo:
+                continue
+            vistos.setdefault(fecha_str, set())
+            if sst_codigo in vistos[fecha_str]:
+                continue
+            vistos[fecha_str].add(sst_codigo)
+            distrito  = (s.get('distrito')  or {}).get('nombre_distrito', '')
+            actividad = (s.get('actividad') or {}).get('nombre_actividad', '')
+            dias.setdefault(fecha_str, []).append({
+                'sst_codigo': sst_codigo,
+                'distrito':   distrito,
+                'actividad':  actividad,
+                'tiene_plano': sst_codigo in con_plano,
+            })
+
+        resultado = [
+            {'fecha': fecha, 'ssts': items}
+            for fecha, items in sorted(dias.items())
+        ]
+        return Response({
+            'semana':  {'desde': str(lunes), 'hasta': str(domingo)},
+            'usuario': {'id': usuario.id_usuario, 'nombre': usuario.nombre},
+            'dias':    resultado,
         })

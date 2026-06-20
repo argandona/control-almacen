@@ -11,6 +11,7 @@ from .views import (
     PedidoViewSet, DevolucionViewSet,
     UploadConsumoViewSet, InventarioViewSet,
     SuministroViewSet, LiquidacionViewSet,
+    PlanoSSTViewSet,
 )
 
 router = DefaultRouter()
@@ -35,6 +36,7 @@ router.register(r'uploads-consumo',      UploadConsumoViewSet,         basename=
 router.register(r'inventarios',          InventarioViewSet,            basename='inventario')
 router.register(r'suministros',          SuministroViewSet,            basename='suministro')
 router.register(r'liquidaciones',        LiquidacionViewSet,           basename='liquidacion')
+router.register(r'planos',               PlanoSSTViewSet,              basename='plano')
 
 urlpatterns = [
     path('auth/login/',   LoginView.as_view(),   name='login'),

@@ -23,6 +23,7 @@ from .models import (
     SSTEncargado, Actividad, ActividadTipoTrabajo,
     Recupero, SuministroRecupero,
     ConsumoMaterialSuministro,
+    PlanoSST,
 )
 
 
@@ -640,4 +641,13 @@ class ConsumoMaterialSuministroAdmin(admin.ModelAdmin):
     list_display        = ["liquidacion", "suministro", "material", "cantidad", "usuario", "fecha"]
     list_filter         = ["fecha"]
     search_fields       = ["suministro__numero_suministro", "material__matricula", "material__descripcion"]
+    list_select_related = True
+
+
+@admin.register(PlanoSST)
+class PlanoSSTAdmin(admin.ModelAdmin):
+    list_display        = ["sst_codigo", "empresa", "usuario", "fecha_actualizacion"]
+    list_filter         = ["empresa", "fecha_actualizacion"]
+    search_fields       = ["sst_codigo"]
+    readonly_fields     = ["elementos", "fecha_actualizacion"]
     list_select_related = True

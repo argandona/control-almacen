@@ -652,3 +652,22 @@ class ConsumoMaterialSuministro(models.Model):
         db_table = "consumo_material_suministro"
     def __str__(self):
         return f"{self.suministro} – {self.material} x{self.cantidad}"
+
+
+class PlanoSST(models.Model):
+    """Plano/croquis editable asociado a un SST (1 plano por SST por empresa).
+
+    Se identifica por el código de SST que llega de Render (igual que
+    LiquidacionSuministro.sst_externo), no por la tabla local SST. El dibujo se
+    guarda como lista de elementos (assetId, x, y, escala, rotacion, z)."""
+    id_plano   = models.AutoField(primary_key=True)
+    empresa    = models.ForeignKey(Empresa, on_delete=models.PROTECT, related_name="planos")
+    sst_codigo = models.CharField(max_length=20, db_index=True)
+    usuario    = models.ForeignKey(Usuario, on_delete=models.PROTECT, related_name="planos")  # último editor
+    elementos  = models.JSONField(default=list)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+    class Meta:
+        db_table = "plano_sst"
+        unique_together = (("empresa", "sst_codigo"),)
+    def __str__(self):
+        return f"Plano SST {self.sst_codigo} ({len(self.elementos)} elementos)"

@@ -13,6 +13,7 @@ from .models import (
     Suministro, ManoDeObra, TipoTrabajo, SuministroTipoTrabajo,
     SuministroManoDeObra, TipoTrabajoManoDeObra, TipoTrabajoMaterial, Recupero, SuministroRecupero,
     LiquidacionSuministro, LiquidacionPartida, ConsumoMaterialSuministro,
+    PlanoSST,
 )
 
 
@@ -633,3 +634,11 @@ class LiquidacionSuministroCreateSerializer(serializers.Serializer):
                 suministro_local.estado = 'ejecutado'
                 suministro_local.save(update_fields=['estado'])
         return liq
+
+
+# ── PlanoSST ─────────────────────────────────────
+class PlanoSSTSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = PlanoSST
+        fields = '__all__'
+        read_only_fields = ('empresa', 'fecha_actualizacion')
