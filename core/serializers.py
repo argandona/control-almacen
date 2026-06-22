@@ -582,11 +582,23 @@ class LiquidacionSuministroCreateSerializer(serializers.Serializer):
     observacion         = serializers.CharField(required=False, allow_blank=True, default='')
     partidas            = LiquidacionPartidaCreateSerializer(many=True)
     materiales          = ConsumoMaterialCreateSerializer(many=True, required=False, default=list)
+    # Estado a fijar en Render: EJECUTADO (liquida MO + materiales) o DEVUELTO (solo MO)
+    estado_suministro   = serializers.ChoiceField(
+        choices=['EJECUTADO', 'DEVUELTO'], required=False, default='EJECUTADO')
+    # Motivo de devolución (obligatorio si DEVUELTO) → va a observacion_contratista en Render
+    motivo              = serializers.CharField(required=False, allow_blank=True, default='')
+    # id del suministro en Render (para reflejar el estado/observación allá)
+    suministro_render_id = serializers.IntegerField(required=False, allow_null=True)
 
     def validate(self, data):
         if not data.get('suministro') and not data.get('suministro_externo'):
             raise serializers.ValidationError(
                 'Debe indicar suministro (local) o suministro_externo (Render).'
+            )
+        if (data.get('estado_suministro') or 'EJECUTADO').upper() == 'DEVUELTO' \
+                and not (data.get('motivo') or '').strip():
+            raise serializers.ValidationError(
+                {'motivo': 'El motivo es obligatorio cuando el suministro es DEVUELTO.'}
             )
         return data
 
@@ -594,16 +606,24 @@ class LiquidacionSuministroCreateSerializer(serializers.Serializer):
         from django.db import transaction
         from django.core.exceptions import ValidationError as DjangoValidationError
         from .models import UsuarioCamion, StockCamion
+        from .render_api import actualizar_suministro
         partidas_data      = validated_data.pop('partidas')
         materiales_data    = validated_data.pop('materiales', [])
+        estado             = (validated_data.pop('estado_suministro', 'EJECUTADO') or 'EJECUTADO').upper()
+        motivo             = validated_data.pop('motivo', '') or ''
+        render_id          = validated_data.pop('suministro_render_id', None)
         usuario            = validated_data['usuario']
         suministro_local   = validated_data.get('suministro')
         suministro_externo = validated_data.get('suministro_externo', '')
+        es_devuelto        = estado == 'DEVUELTO'
         with transaction.atomic():
             liq = LiquidacionSuministro.objects.create(**validated_data)
+            # La mano de obra (partidas) se liquida siempre, ejecutado o devuelto
             for p in partidas_data:
                 LiquidacionPartida.objects.create(liquidacion=liq, **p)
-            if materiales_data:
+            # Los materiales solo se consumen/descuentan si el suministro fue EJECUTADO.
+            # Si fue DEVUELTO no se toca stock aunque vengan materiales en el payload.
+            if materiales_data and not es_devuelto:
                 camion = UsuarioCamion.camion_activo_de_usuario(usuario)
                 if camion is None:
                     raise serializers.ValidationError(
@@ -629,10 +649,22 @@ class LiquidacionSuministroCreateSerializer(serializers.Serializer):
                         material=m['material'],
                         cantidad=m['cantidad'],
                     )
-            # Solo actualizar estado si es suministro local
+            # Reflejar el estado en el suministro local (si lo hay)
             if suministro_local:
-                suministro_local.estado = 'ejecutado'
+                suministro_local.estado = 'devuelto' if es_devuelto else 'ejecutado'
                 suministro_local.save(update_fields=['estado'])
+            # Reflejar estado/observación en Render (si la app mandó el id de Render).
+            # Va dentro de la transacción: si Render falla, se revierte la liquidación.
+            if render_id:
+                payload = {'estado_suministro': estado}
+                if es_devuelto:
+                    payload['observacion_contratista'] = motivo
+                try:
+                    actualizar_suministro(render_id, payload)
+                except Exception as exc:
+                    raise serializers.ValidationError(
+                        {'estado_suministro': f'No se pudo actualizar el suministro en Render: {exc}'}
+                    )
         return liq
 
 
