@@ -60,35 +60,45 @@ def _render_token():
     return resp.json()['access']
 
 
-def _render_suministros(nombre_usuario, fecha_desde, fecha_hasta):
+def _render_suministros(nombre_usuario, fecha_desde=None, fecha_hasta=None):
     """
     Llama a /api/suministros/ del proyecto Render filtrando por usuario,
-    rango de semana, actividad asignada y estado ASIGNADO.
+    actividad asignada y estado ASIGNADO. Si se pasan fecha_desde/fecha_hasta,
+    además filtra por ese rango; si no, trae todos los pendientes (sin importar
+    la semana), que es lo que necesita el listado de "por liquidar".
     """
     base  = _settings.RENDER_API_URL.rstrip('/')
     token = _render_token()
+    params = {
+        'ejecutado_por': nombre_usuario,
+        'estado':        'ASIGNADO',
+        'con_actividad': '1',
+    }
+    con_rango = bool(fecha_desde and fecha_hasta)
+    if con_rango:
+        params['fecha_desde'] = str(fecha_desde)
+        params['fecha_hasta'] = str(fecha_hasta)
     resp  = _requests.get(
         f'{base}/api/suministros/',
         headers={'Authorization': f'Bearer {token}'},
-        params={
-            'ejecutado_por': nombre_usuario,
-            'fecha_desde':   str(fecha_desde),
-            'fecha_hasta':   str(fecha_hasta),
-            'estado':        'ASIGNADO',
-            'con_actividad': '1',
-        },
+        params=params,
         timeout=20,
     )
     resp.raise_for_status()
     data = resp.json()
     # Doble filtro local como salvaguarda (mientras Render no tenga los filtros desplegados)
-    return [
-        s for s in data
-        if s.get('actividad')
-        and (s.get('estado_suministro') or {}).get('estado_suministro', '').upper() == 'ASIGNADO'
-        and nombre_usuario.lower() in (s.get('ejecutado_por') or '').lower()
-        and str(fecha_desde) <= (s.get('fecha_programada') or '') <= str(fecha_hasta)
-    ]
+    out = []
+    for s in data:
+        if not s.get('actividad'):
+            continue
+        if (s.get('estado_suministro') or {}).get('estado_suministro', '').upper() != 'ASIGNADO':
+            continue
+        if nombre_usuario.lower() not in (s.get('ejecutado_por') or '').lower():
+            continue
+        if con_rango and not (str(fecha_desde) <= (s.get('fecha_programada') or '') <= str(fecha_hasta)):
+            continue
+        out.append(s)
+    return out
 
 
 # ── Helper: retorna queryset filtrado por empresa del usuario autenticado ──
@@ -1144,10 +1154,10 @@ class LiquidacionViewSet(viewsets.ModelViewSet):
         """
         GET /api/liquidaciones/semana_trabajo/?usuario=<id>
 
-        Retorna los suministros del proyecto Render para la semana actual
-        (lunes–domingo) que tengan ejecutado_por = nombre del usuario local.
-        Agrupa por día e incluye los TipoTrabajo disponibles según la Actividad
-        de cada suministro.
+        Retorna TODOS los suministros ASIGNADOS pendientes de liquidar del
+        proyecto Render (sin filtro de semana) que tengan ejecutado_por =
+        nombre del usuario local. Agrupa por día de programación e incluye los
+        TipoTrabajo disponibles según la Actividad de cada suministro.
         """
         usuario_id = request.query_params.get('usuario')
         if not usuario_id:
@@ -1157,11 +1167,6 @@ class LiquidacionViewSet(viewsets.ModelViewSet):
             usuario = Usuario.objects.get(pk=usuario_id)
         except Usuario.DoesNotExist:
             return Response({'detail': 'Usuario no encontrado.'}, status=404)
-
-        # Rango lunes–domingo de la semana actual
-        hoy        = datetime.date.today()
-        lunes      = hoy - datetime.timedelta(days=hoy.weekday())
-        domingo    = lunes + datetime.timedelta(days=6)
 
         # Mapa actividad_nombre → lista de TipoTrabajo (local)
         atts = (ActividadTipoTrabajo.objects
@@ -1175,9 +1180,9 @@ class LiquidacionViewSet(viewsets.ModelViewSet):
                 actividad_map[nombre] = []
             actividad_map[nombre].append(att.tipo_trabajo)
 
-        # Llamar al proyecto Render
+        # Todos los suministros ASIGNADOS pendientes de liquidar (sin filtro de semana)
         try:
-            suministros = _render_suministros(usuario.nombre, lunes, domingo)
+            suministros = _render_suministros(usuario.nombre)
         except Exception as exc:
             return Response({'detail': f'Error al consultar Render: {exc}'}, status=502)
 
@@ -1222,8 +1227,12 @@ class LiquidacionViewSet(viewsets.ModelViewSet):
             {'fecha': fecha, 'suministros': items}
             for fecha, items in sorted(dias.items())
         ]
+        # Rango real que abarcan los pendientes (para el encabezado de la app)
+        fechas = [s.get('fecha_programada') for s in suministros if s.get('fecha_programada')]
+        hoy    = str(datetime.date.today())
         return Response({
-            'semana':    {'desde': str(lunes), 'hasta': str(domingo)},
+            'semana':    {'desde': min(fechas) if fechas else hoy,
+                          'hasta': max(fechas) if fechas else hoy},
             'usuario':   {'id': usuario.id_usuario, 'nombre': usuario.nombre},
             'dias':      resultado,
         })
