@@ -1300,12 +1300,9 @@ class PlanoSSTViewSet(viewsets.ModelViewSet):
         except Usuario.DoesNotExist:
             return Response({'detail': 'Usuario no encontrado.'}, status=404)
 
-        hoy     = datetime.date.today()
-        lunes   = hoy - datetime.timedelta(days=hoy.weekday())
-        domingo = lunes + datetime.timedelta(days=6)
-
+        # Todas las SST asignadas pendientes (sin filtro de semana)
         try:
-            suministros = _render_suministros(usuario.nombre, lunes, domingo)
+            suministros = _render_suministros(usuario.nombre)
         except Exception as exc:
             return Response({'detail': f'Error al consultar Render: {exc}'}, status=502)
 
@@ -1341,8 +1338,11 @@ class PlanoSSTViewSet(viewsets.ModelViewSet):
             {'fecha': fecha, 'ssts': items}
             for fecha, items in sorted(dias.items())
         ]
+        fechas = [s.get('fecha_programada') for s in suministros if s.get('fecha_programada')]
+        hoy    = str(datetime.date.today())
         return Response({
-            'semana':  {'desde': str(lunes), 'hasta': str(domingo)},
+            'semana':  {'desde': min(fechas) if fechas else hoy,
+                        'hasta': max(fechas) if fechas else hoy},
             'usuario': {'id': usuario.id_usuario, 'nombre': usuario.nombre},
             'dias':    resultado,
         })
